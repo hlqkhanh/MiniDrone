@@ -1,0 +1,132 @@
+<Window x:Class="DroneMotion.Wpf.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:h="http://helix-toolkit.org/wpf"
+        mc:Ignorable="d"
+        Title="MPU6050 Motion Viewer"
+        Width="1180" Height="720" MinWidth="900" MinHeight="580"
+        Background="#0B1120" Foreground="#E2E8F0"
+        Closed="Window_OnClosed">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Margin" Value="0,0,8,8"/>
+            <Setter Property="Background" Value="#1E293B"/>
+            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="BorderBrush" Value="#475569"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="0,4,0,12"/>
+        </Style>
+        <Style x:Key="MetricValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="25"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#67E8F9"/>
+            <Setter Property="Margin" Value="0,2,0,12"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="18">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="18"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Background="#111827" CornerRadius="12" Padding="18">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="MPU6050" FontSize="25" FontWeight="Bold"/>
+                    <TextBlock Text="3D motion viewer" Foreground="#94A3B8" Margin="0,2,0,20"/>
+
+                    <TextBlock Text="COM PORT" FontSize="11" Foreground="#94A3B8"/>
+                    <ComboBox ItemsSource="{Binding AvailablePorts}"
+                              SelectedItem="{Binding SelectedPort}"/>
+                    <TextBlock Text="BAUD RATE" FontSize="11" Foreground="#94A3B8"/>
+                    <ComboBox ItemsSource="{Binding BaudRates}"
+                              SelectedItem="{Binding SelectedBaudRate}"/>
+
+                    <WrapPanel Margin="0,2,0,8">
+                        <Button Content="Refresh" Command="{Binding RefreshPortsCommand}"/>
+                        <Button Content="Connect" Command="{Binding ConnectCommand}"/>
+                        <Button Content="Disconnect" Command="{Binding DisconnectCommand}"/>
+                    </WrapPanel>
+                    <WrapPanel Margin="0,0,0,10">
+                        <Button Content="Calibrate" Command="{Binding CalibrateCommand}"/>
+                        <Button Content="Zero orientation" Command="{Binding ZeroCommand}"/>
+                    </WrapPanel>
+
+                    <Border Background="#0F172A" CornerRadius="7" Padding="10" Margin="0,0,0,18">
+                        <StackPanel>
+                            <TextBlock Text="{Binding ConnectionStatus}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding DeviceStatus}" Foreground="#94A3B8" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="ROLL" FontSize="10" Foreground="#94A3B8"/>
+                            <TextBlock Style="{StaticResource MetricValue}" Text="{Binding Roll, StringFormat={}{0:F1}°}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="PITCH" FontSize="10" Foreground="#94A3B8"/>
+                            <TextBlock Style="{StaticResource MetricValue}" Text="{Binding Pitch, StringFormat={}{0:F1}°}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="YAW" FontSize="10" Foreground="#94A3B8"/>
+                            <TextBlock Style="{StaticResource MetricValue}" Text="{Binding Yaw, StringFormat={}{0:F1}°}"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="PERFORMANCE" FontSize="11" Foreground="#94A3B8" Margin="0,5,0,7"/>
+                    <TextBlock Text="{Binding SampleRate, StringFormat=Serial: {0:F0} samples/s}"/>
+                    <TextBlock Text="{Binding FramesPerSecond, StringFormat=Viewport: {0:F0} FPS}" Margin="0,3,0,0"/>
+
+                    <TextBlock Margin="0,20,0,0" Foreground="#64748B" TextWrapping="Wrap"
+                               Text="Yaw is relative and may drift because MPU6050 has no magnetometer."/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Border Grid.Column="2" Background="#0F172A" CornerRadius="12" ClipToBounds="True">
+            <h:HelixViewport3D Background="#0F172A"
+                               ShowViewCube="True"
+                               ShowCoordinateSystem="False"
+                               ZoomExtentsWhenLoaded="True"
+                               IsHeadLightEnabled="False">
+                <h:HelixViewport3D.Camera>
+                    <PerspectiveCamera Position="0,0.5,10" LookDirection="0,0,-10" UpDirection="0,1,0" FieldOfView="42"/>
+                </h:HelixViewport3D.Camera>
+                <h:SunLight/>
+                <h:GridLinesVisual3D Width="12" Length="12" MinorDistance="0.5" MajorDistance="2"
+                                     Thickness="0.012" Fill="#334155"/>
+                <h:CoordinateSystemVisual3D ArrowLengths="1.2"/>
+
+                <ModelVisual3D>
+                    <ModelVisual3D.Transform>
+                        <RotateTransform3D>
+                            <RotateTransform3D.Rotation>
+                                <QuaternionRotation3D Quaternion="{Binding DisplayQuaternion}"/>
+                            </RotateTransform3D.Rotation>
+                        </RotateTransform3D>
+                    </ModelVisual3D.Transform>
+                    <!-- Flat sensor board: X=length, Y=thickness, Z=front/back. -->
+                    <h:BoxVisual3D Center="0,0.3,0" Length="4" Width="0.55" Height="2.4" Fill="#2563EB"/>
+                    <!-- Yellow front edge, red right edge, cyan component on the top face. -->
+                    <h:BoxVisual3D Center="0,0.59,-1.02" Length="2.8" Width="0.08" Height="0.22" Fill="#FACC15"/>
+                    <h:BoxVisual3D Center="1.72,0.59,0" Length="0.22" Width="0.08" Height="1.45" Fill="#EF4444"/>
+                    <h:BoxVisual3D Center="0,0.61,0" Length="1.4" Width="0.12" Height="0.9" Fill="#22D3EE"/>
+                    <h:ArrowVisual3D Point1="0,0.76,0" Point2="0,0.76,-2.15" Diameter="0.08" Fill="#F8FAFC"/>
+                </ModelVisual3D>
+            </h:HelixViewport3D>
+        </Border>
+    </Grid>
+</Window>
