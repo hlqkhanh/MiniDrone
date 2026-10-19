@@ -6,15 +6,12 @@ public readonly record struct EulerAngles(double Roll, double Pitch, double Yaw)
 
 public sealed class OrientationService
 {
-    // GY-521 mounting used by the viewer:
-    // sensor +Y -> model +X (right)
-    // sensor -X -> model -Z (forward)
-    // sensor +Z -> model +Y (up)
-    // The extra -90 degree rotation around sensor Z corrects the X/Y swap
-    // observed when the physical board is mounted with its narrow end forward.
-    private static readonly Quaternion SensorToWpfBasis = Quaternion.Normalize(
-        Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 2.0f) *
-        Quaternion.CreateFromAxisAngle(Vector3.UnitZ, -MathF.PI / 2.0f));
+    // The GLB's USB end is +Z, its top is +Y and its right side is -X.
+    // On the mounted board, +sensor X lifts the USB end (pitch) and
+    // +sensor Y lowers the right side (roll). Keep sensor Z mapped to +Y.
+    // This proper rotation maps sensor X/Y/Z to model -X/+Z/+Y.
+    private static readonly Quaternion SensorToWpfBasis =
+        new(0, MathF.Sqrt(0.5f), MathF.Sqrt(0.5f), 0);
 
     private readonly object _sync = new();
     private Quaternion _current = Quaternion.Identity;
@@ -46,10 +43,20 @@ public sealed class OrientationService
         lock (_sync)
         {
             _current = mapped;
+            if (!_hasSample) _zero = mapped;
             _hasSample = true;
         }
 
         return true;
+    }
+
+    public void Reset()
+    {
+        lock (_sync)
+        {
+            _current = _zero = Quaternion.Identity;
+            _hasSample = false;
+        }
     }
 
     public bool Zero()
@@ -80,15 +87,14 @@ public sealed class OrientationService
             orientation = Quaternion.Normalize(Quaternion.Inverse(_zero) * _current);
         }
 
-        // Convert the relative WPF rotation back to sensor axes before naming
-        // the angles. With this mounting, sensor Y is the right axis (Pitch),
-        // sensor -X is the forward axis (Roll), and sensor Z is up (Yaw).
+        // Name the angles according to this board mounting: sensor X is
+        // nose-up pitch, sensor Y is right bank. Preserve the yaw convention.
         var sensorRelative = Quaternion.Normalize(
             Quaternion.Inverse(SensorToWpfBasis) * orientation * SensorToWpfBasis);
         var sensorAngles = ToEulerDegrees(sensorRelative);
         euler = new EulerAngles(
-            Roll: -sensorAngles.Roll,
-            Pitch: sensorAngles.Pitch,
+            Roll: sensorAngles.Pitch,
+            Pitch: sensorAngles.Roll,
             Yaw: sensorAngles.Yaw);
         return true;
     }

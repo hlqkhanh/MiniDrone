@@ -3,4 +3,14 @@ obj/
 .vs/
 *.user
 *.suo
+.tools/
+firmware/DroneMotionMpu6050/WifiConfig.local.h
+
+# Large files & installers (>100MB)
+*.msi
+*.zip
+*.blend
+*.blend1
+* - Copy.*
+asset/explore-3d-drone/drone_assembly_full.glb
 

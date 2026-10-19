@@ -5,11 +5,12 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:h="http://helix-toolkit.org/wpf"
         mc:Ignorable="d"
-        Title="MPU6050 Motion Viewer"
+        Title="Drone Motion Viewer"
         Width="1180" Height="720" MinWidth="900" MinHeight="580"
         Background="#0B1120" Foreground="#E2E8F0"
         Closed="Window_OnClosed">
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
         <Style TargetType="Button">
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Margin" Value="0,0,8,8"/>
@@ -39,18 +40,39 @@
         <Border Grid.Column="0" Background="#111827" CornerRadius="12" Padding="18">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <TextBlock Text="MPU6050" FontSize="25" FontWeight="Bold"/>
+                    <TextBlock Text="DRONE IMU" FontSize="25" FontWeight="Bold"/>
                     <TextBlock Text="3D motion viewer" Foreground="#94A3B8" Margin="0,2,0,20"/>
 
+                    <StackPanel IsEnabled="{Binding CanEditConnection}">
+                    <CheckBox Content="Wi-Fi" IsChecked="{Binding UseWifi}" Foreground="#E2E8F0" Margin="0,0,0,10"/>
+                    <StackPanel Visibility="{Binding UseWifi, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="Keep laptop and ESP32 on the same network. Enter the IP shown on the Wi-Fi setup page or Serial Monitor." Foreground="#67E8F9" TextWrapping="Wrap"/>
+                        <TextBlock Text="ESP32 IP ADDRESS" FontSize="11" Foreground="#94A3B8" Margin="0,8,0,3"/>
+                        <TextBox Text="{Binding WifiHost, UpdateSourceTrigger=PropertyChanged}" Padding="8,6"/>
+                        <TextBlock Text="PORT" FontSize="11" Foreground="#94A3B8" Margin="0,8,0,3"/>
+                        <TextBox Text="{Binding WifiPort, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Margin="0,0,0,12"/>
+                    </StackPanel>
+                    <StackPanel>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UseWifi}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
                     <TextBlock Text="COM PORT" FontSize="11" Foreground="#94A3B8"/>
                     <ComboBox ItemsSource="{Binding AvailablePorts}"
                               SelectedItem="{Binding SelectedPort}"/>
                     <TextBlock Text="BAUD RATE" FontSize="11" Foreground="#94A3B8"/>
                     <ComboBox ItemsSource="{Binding BaudRates}"
                               SelectedItem="{Binding SelectedBaudRate}"/>
+                    <Button Content="Refresh COM ports" Command="{Binding RefreshPortsCommand}"/>
+                    </StackPanel>
+                    </StackPanel>
 
                     <WrapPanel Margin="0,2,0,8">
-                        <Button Content="Refresh" Command="{Binding RefreshPortsCommand}"/>
                         <Button Content="Connect" Command="{Binding ConnectCommand}"/>
                         <Button Content="Disconnect" Command="{Binding DisconnectCommand}"/>
                     </WrapPanel>
@@ -87,30 +109,42 @@
                     </Grid>
 
                     <TextBlock Text="PERFORMANCE" FontSize="11" Foreground="#94A3B8" Margin="0,5,0,7"/>
-                    <TextBlock Text="{Binding SampleRate, StringFormat=Serial: {0:F0} samples/s}"/>
+                    <TextBlock Text="{Binding SampleRate, StringFormat=Data: {0:F0} samples/s}"/>
                     <TextBlock Text="{Binding FramesPerSecond, StringFormat=Viewport: {0:F0} FPS}" Margin="0,3,0,0"/>
 
                     <TextBlock Margin="0,20,0,0" Foreground="#64748B" TextWrapping="Wrap"
-                               Text="Yaw is relative and may drift because MPU6050 has no magnetometer."/>
+                               Text="Yaw is relative and may drift; this viewer uses accelerometer and gyro data."/>
                 </StackPanel>
             </ScrollViewer>
         </Border>
 
         <Border Grid.Column="2" Background="#0F172A" CornerRadius="12" ClipToBounds="True">
+            <Grid>
             <h:HelixViewport3D Background="#0F172A"
                                ShowViewCube="True"
                                ShowCoordinateSystem="False"
-                               ZoomExtentsWhenLoaded="True"
+                               ZoomExtentsWhenLoaded="False"
                                IsHeadLightEnabled="False">
                 <h:HelixViewport3D.Camera>
-                    <PerspectiveCamera Position="0,0.5,10" LookDirection="0,0,-10" UpDirection="0,1,0" FieldOfView="42"/>
+                    <PerspectiveCamera Position="0,5,10" LookDirection="0,-5,-10" UpDirection="0,1,0" FieldOfView="42"/>
                 </h:HelixViewport3D.Camera>
                 <h:SunLight/>
                 <h:GridLinesVisual3D Width="12" Length="12" MinorDistance="0.5" MajorDistance="2"
-                                     Thickness="0.012" Fill="#334155"/>
+                                     Thickness="0.012" Fill="#334155">
+                    <h:GridLinesVisual3D.Transform>
+                        <Transform3DGroup>
+                            <RotateTransform3D>
+                                <RotateTransform3D.Rotation>
+                                    <AxisAngleRotation3D Axis="1,0,0" Angle="-90"/>
+                                </RotateTransform3D.Rotation>
+                            </RotateTransform3D>
+                            <TranslateTransform3D OffsetY="-1.2"/>
+                        </Transform3DGroup>
+                    </h:GridLinesVisual3D.Transform>
+                </h:GridLinesVisual3D>
                 <h:CoordinateSystemVisual3D ArrowLengths="1.2"/>
 
-                <ModelVisual3D>
+                <ModelVisual3D x:Name="DroneModel">
                     <ModelVisual3D.Transform>
                         <RotateTransform3D>
                             <RotateTransform3D.Rotation>
@@ -118,15 +152,12 @@
                             </RotateTransform3D.Rotation>
                         </RotateTransform3D>
                     </ModelVisual3D.Transform>
-                    <!-- Flat sensor board: X=length, Y=thickness, Z=front/back. -->
-                    <h:BoxVisual3D Center="0,0.3,0" Length="4" Width="0.55" Height="2.4" Fill="#2563EB"/>
-                    <!-- Yellow front edge, red right edge, cyan component on the top face. -->
-                    <h:BoxVisual3D Center="0,0.59,-1.02" Length="2.8" Width="0.08" Height="0.22" Fill="#FACC15"/>
-                    <h:BoxVisual3D Center="1.72,0.59,0" Length="0.22" Width="0.08" Height="1.45" Fill="#EF4444"/>
-                    <h:BoxVisual3D Center="0,0.61,0" Length="1.4" Width="0.12" Height="0.9" Fill="#22D3EE"/>
-                    <h:ArrowVisual3D Point1="0,0.76,0" Point2="0,0.76,-2.15" Diameter="0.08" Fill="#F8FAFC"/>
                 </ModelVisual3D>
             </h:HelixViewport3D>
+                <TextBlock x:Name="ModelLoadStatus" Text="Loading drone model..."
+                           HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                           Margin="20" Foreground="#E2E8F0" TextWrapping="Wrap" IsHitTestVisible="False"/>
+            </Grid>
         </Border>
     </Grid>
 </Window>

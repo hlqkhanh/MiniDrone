@@ -9,5 +9,10 @@
   <ItemGroup>
     <PackageReference Include="HelixToolkit.Wpf" Version="3.1.2" />
     <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+    <PackageReference Include="SharpGLTF.Core" Version="1.0.7" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\asset\esp32_drone_3d_model.viewer.glb" Link="Assets\drone.glb"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

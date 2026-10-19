@@ -1,0 +1,5 @@
+﻿Báo cáo ngày 16/10/2026
+- Đọc sơ đồ bo drone ESP32 và dịch tài liệu sang tiếng Việt.
+- Xác nhận MPU6500 qua SPI; triển khai firmware đọc cảm biến và gửi dữ liệu cho app 3D.
+- Sửa chiều quay pitch/yaw của mô hình; bổ sung kết nối Wi-Fi TCP cho app.
+- Xây dựng trang web chọn Wi-Fi và lưu cấu hình trên ESP32; tạo chương trình thử 4 động cơ.

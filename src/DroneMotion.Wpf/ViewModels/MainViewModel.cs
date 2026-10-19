@@ -12,6 +12,11 @@ namespace DroneMotion.Wpf.ViewModels;
 public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly SerialConnectionService _serial = new();
+    private readonly TcpConnectionService _tcp = new();
+    private bool _useWifi = true;
+    private bool _isConnecting;
+    private string _wifiHost = "";
+    private int _wifiPort = 3333;
     private readonly OrientationService _orientation = new();
     private readonly SynchronizationContext _uiContext;
     private readonly Stopwatch _rateTimer = Stopwatch.StartNew();
@@ -35,9 +40,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _serial.MessageReceived += OnMessageReceived;
         _serial.ConnectionLost += OnConnectionLost;
+        _tcp.MessageReceived += OnMessageReceived;
+        _tcp.ConnectionLost += OnConnectionLost;
 
         RefreshPortsCommand = new RelayCommand(RefreshPorts);
-        ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsConnected && !string.IsNullOrWhiteSpace(SelectedPort), ShowError);
+        ConnectCommand = new AsyncRelayCommand(ConnectAsync,
+            () => !IsConnected && !_isConnecting && (UseWifi
+                ? !string.IsNullOrWhiteSpace(WifiHost) && WifiPort is >= 1 and <= 65535
+                : !string.IsNullOrWhiteSpace(SelectedPort)), ShowError);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync, () => IsConnected, ShowError);
         CalibrateCommand = new AsyncRelayCommand(CalibrateAsync, () => IsConnected, ShowError);
         ZeroCommand = new RelayCommand(ZeroOrientation, () => HasOrientation);
@@ -48,6 +58,27 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<string> AvailablePorts { get; } = new();
 
     public IReadOnlyList<int> BaudRates { get; } = [115200, 57600, 38400, 19200, 9600];
+
+    public bool CanEditConnection => !IsConnected && !_isConnecting;
+    public bool UseWifi
+    {
+        get => _useWifi;
+        set
+        {
+            if (!CanEditConnection) return;
+            if (SetProperty(ref _useWifi, value)) CommandManager.InvalidateRequerySuggested();
+        }
+    }
+    public string WifiHost
+    {
+        get => _wifiHost;
+        set { if (SetProperty(ref _wifiHost, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+    public int WifiPort
+    {
+        get => _wifiPort;
+        set { if (SetProperty(ref _wifiPort, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
 
     public string? SelectedPort
     {
@@ -86,6 +117,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         {
             if (SetProperty(ref _isConnected, value))
             {
+                OnPropertyChanged(nameof(CanEditConnection));
                 CommandManager.InvalidateRequerySuggested();
             }
         }
@@ -158,34 +190,43 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         SelectedPort = previous is not null && AvailablePorts.Contains(previous)
             ? previous
             : AvailablePorts.FirstOrDefault();
-        DeviceStatus = AvailablePorts.Count == 0 ? "No COM ports found" : DeviceStatus;
+        if (!UseWifi && AvailablePorts.Count == 0) DeviceStatus = "No COM ports found";
     }
 
     private async Task ConnectAsync()
     {
-        if (SelectedPort is null)
+        _isConnecting = true;
+        OnPropertyChanged(nameof(CanEditConnection));
+        try
         {
-            return;
+            var endpoint = UseWifi ? $"{WifiHost}:{WifiPort}" : SelectedPort;
+            _orientation.Reset();
+            DisplayQuaternion = MediaQuaternion.Identity;
+            Roll = Pitch = Yaw = 0;
+            HasOrientation = false;
+            ConnectionStatus = $"Opening {endpoint}...";
+            if (UseWifi) await _tcp.ConnectAsync(WifiHost, WifiPort);
+            else if (SelectedPort is not null) await _serial.ConnectAsync(SelectedPort, SelectedBaudRate);
+            else return;
+            IsConnected = UseWifi ? _tcp.IsConnected : _serial.IsConnected;
+            ConnectionStatus = IsConnected ? $"Connected to {endpoint}" : "Disconnected";
+            if (!IsConnected) return;
+            DeviceStatus = "Waiting for sensor data...";
+            if (!UseWifi) await Task.Delay(2000); // USB may reset the board.
+            if (IsConnected) await SendCommandAsync("PING");
         }
-
-        ConnectionStatus = $"Opening {SelectedPort}...";
-        await _serial.ConnectAsync(SelectedPort, SelectedBaudRate);
-        IsConnected = true;
-        ConnectionStatus = $"Connected to {SelectedPort}";
-        DeviceStatus = "Waiting for Arduino...";
-
-        // Opening a Nano's serial port normally resets it. Wait for the
-        // bootloader before sending the lightweight connection check.
-        await Task.Delay(2000);
-        if (IsConnected)
+        finally
         {
-            await _serial.SendCommandAsync("PING");
+            _isConnecting = false;
+            OnPropertyChanged(nameof(CanEditConnection));
+            CommandManager.InvalidateRequerySuggested();
         }
     }
 
     private async Task DisconnectAsync()
     {
         await _serial.DisconnectAsync();
+        await _tcp.DisconnectAsync();
         IsConnected = false;
         ConnectionStatus = "Disconnected";
         DeviceStatus = "Waiting for connection";
@@ -193,7 +234,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task CalibrateAsync()
     {
-        await _serial.SendCommandAsync("CAL");
+        await SendCommandAsync("CAL");
         DeviceStatus = "Calibration requested — keep the sensor still";
     }
 
@@ -204,6 +245,10 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             DeviceStatus = "Orientation zeroed";
         }
     }
+
+    private Task SendCommandAsync(string command) => UseWifi
+        ? _tcp.SendCommandAsync(command)
+        : _serial.SendCommandAsync(command);
 
     private void OnMessageReceived(ProtocolMessage message)
     {
@@ -258,6 +303,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     {
         _serial.MessageReceived -= OnMessageReceived;
         _serial.ConnectionLost -= OnConnectionLost;
+        _tcp.MessageReceived -= OnMessageReceived;
+        _tcp.ConnectionLost -= OnConnectionLost;
+        await _tcp.DisposeAsync();
         await _serial.DisposeAsync();
     }
 }

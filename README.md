@@ -1,8 +1,12 @@
 # MPU6050 3D Motion Viewer
 
-Ứng dụng hiển thị hướng của module GY-521/MPU6050 trong không gian 3D. Arduino Nano tính quaternion ở 100 Hz và gửi qua USB serial; ứng dụng WPF chỉ giữ mẫu mới nhất và cập nhật viewport theo nhịp render.
+**Cấu hình Wi-Fi trên trình duyệt:** [cách nạp và kết nối Wi-Fi](firmware/WIFI.md). Nối vào `DroneMotion_Setup-XXXX` (mật khẩu `drone12345`), mở `http://192.168.4.1` để chọn mạng. Sau đó laptop trở về cùng LAN với ESP32, app dùng IP trên trang và port `3333`.
 
-> MPU6050 không có từ kế. Roll/pitch được hiệu chỉnh theo trọng lực, còn yaw là tương đối và sẽ trôi dần. Nút **Zero orientation** đặt tư thế hiện tại làm mốc mới nhưng không loại bỏ yaw drift.
+**Dùng ESP32 XW_Z1_V2.0:** xem [hướng dẫn nạp và kết nối ESP32](firmware/ESP32.md). Sketch dùng SPI (SCK18/MOSI23/MISO19/CS5), nhận dạng MPU6500 hoặc MPU9250 qua WHO_AM_I. Các bước Nano/I2C bên dưới dành cho Arduino Nano.
+
+Ứng dụng hiển thị hướng cảm biến trong không gian 3D. Arduino Nano + MPU6050 (I2C) hoặc ESP32 + MPU6500/MPU9250 (SPI) tính quaternion ở 100 Hz và gửi qua USB serial; ứng dụng WPF chỉ giữ mẫu mới nhất và cập nhật viewport theo nhịp render.
+
+> Firmware chỉ dùng gia tốc/gyro, chưa dùng từ kế kể cả khi phát hiện MPU9250. Roll/pitch được hiệu chỉnh theo trọng lực, còn yaw là tương đối và sẽ trôi dần. Nút **Zero orientation** đặt tư thế hiện tại làm mốc mới nhưng không loại bỏ yaw drift.
 
 ## 1. Đấu dây
 
@@ -55,7 +59,7 @@ ERROR,<code>
 PONG
 ```
 
-Ứng dụng có thể gửi `CAL\n` và `PING\n`.
+Ứng dụng có thể gửi `CAL\n` và `PING\n`. Serial Monitor có thể gửi thêm `INFO\n` để đọc lại bus và WHO_AM_I. Hiệu chuẩn hết thời gian chờ sau 15 giây nếu không thu đủ mẫu đứng yên; gửi CAL để thử lại.
 
 ## Kiểm thử
 
