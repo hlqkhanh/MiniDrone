@@ -69,30 +69,55 @@ Nạp lại sketch chính `firmware/DroneMotionMpu6050/DroneMotionMpu6050.ino`
 với Arduino-ESP32 core 3.x, giữ toàn bộ file header cùng thư mục, gồm
 `MotorControl.h` và `MotionCompensation.h`. Build/chạy lại app WPF.
 
-Trong phần **MOTOR TEST**, tháo toàn bộ cánh quạt, xác nhận **All propellers
-are removed**, chọn LF/RF/LR/RR hoặc ALL, đặt PWM 1–35% và thời gian
-1–2000 ms, rồi bấm **Run test**. LF/RF là trái/phải trước, LR/RR là
-trái/phải sau theo sơ đồ GPIO14/15/12/13. PWM không phải tốc độ quay đo được.
-Động cơ cần nguồn VBAT phù hợp theo sơ đồ, không chỉ cắm USB.
+Trong phần **MANUAL MOTOR OUTPUT**, tháo toàn bộ cánh quạt, xác nhận **All
+propellers are removed**, chọn LF/RF/LR/RR hoặc ALL và đặt Common PWM 0–100%.
+Chọn CUSTOM hoặc sửa một trong bốn giá trị để đặt PWM riêng cho từng động cơ.
+**Copy common PWM to all four** sao chép mức chung sang bốn giá trị CUSTOM.
+LF/RF là trái/phải trước, LR/RR là trái/phải sau theo GPIO14/15/12/13.
+PWM dùng 8 bit (duty 0–255) ở 20 kHz, không phải tốc độ quay hay lực nâng đo
+được. Slider bước 0.1%, textbox cho nhập số trực tiếp; preview hiển thị duty
+thực sau lượng tử hóa. Động cơ cần nguồn VBAT phù hợp theo sơ đồ.
 
-**STOP ALL** dừng tất cả. Mỗi lần chạy cần ARM mới (app tự gửi khi bấm
-Run test). ESP32 dùng timer task độc lập để tắt PWM khi hết thời gian;
-không dựa vào đồng hồ của app. Disconnect/đóng app gửi STOP nếu còn kết nối;
-mất Wi-Fi được dừng khi firmware phát hiện, còn rút USB vẫn có giới hạn timer.
-Calibrate dừng động cơ trước khi đo bias. Reset không tự chạy động cơ.
-Arduino Nano và firmware cũ không bật được nút Run test.
+Duration nhận 1–4294967295 ms (60000 = 1 phút), hoặc chọn **Continuous until
+STOP** để không đặt thời hạn. Không còn giới hạn thử 35%/2 giây trong firmware
+chính. Đây là thời gian chạy động cơ thủ công, không phải chế độ bay cân bằng.
+**Run / apply** gửi cấu hình và bắt đầu lại thời gian chạy; sửa ô nhập không
+tự tác động PWM. **STOP ALL** hoặc **Esc** dừng tất cả. Bỏ xác nhận tháo cánh lúc chạy cũng
+yêu cầu dừng.
+
+App tự ARM cho mỗi lần chạy, gửi KEEPALIVE mỗi 500 ms sau xác nhận RUNNING.
+Supervisor timer trên ESP32 kiểm tra mỗi 50 ms: hết thời gian hoặc thiếu
+KEEPALIVE từ đúng kết nối trong 2 giây thì dừng, kể cả khi loop cảm biến đang
+bận. Disconnect/đóng app gửi STOP; Calibrate dừng động cơ trước khi đo bias.
+Reset không tự chạy động cơ. Firmware chính V2 báo `STATUS,MOTOR_ADVANCED_V2`;
+Arduino Nano và firmware cũ không bật được Run / apply, cần nạp lại sketch
+chính rồi reconnect.
 
 Có thể gửi thủ công qua Serial Monitor (115200, Newline):
 
 ```text
 MOTOR ARM
-MOTOR LF 20 1000
+MOTOR SET 51 76 0 128 60000
+MOTOR KEEPALIVE
 MOTOR STOP
 ```
 
-Thay LF bằng RF/LR/RR/ALL. ARM hết hạn sau 15 giây, chỉ cho một lần chạy
-và phải đến từ cùng kết nối USB/Wi-Fi với lệnh chạy. Các kiểm thử máy tính
-dùng PWM/timer giả lập; chưa thay thế kiểm tra timing, nguồn và động cơ thật.
+SET nhận duty LF/RF/LR/RR (0–255), sau đó là thời gian ms (0 = liên tục).
+Gửi KEEPALIVE lặp lại trong vòng 2 giây để duy trì chạy, không chỉ gửi một lần.
+Vẫn hỗ trợ `MOTOR LF 20 1000` hoặc RF/LR/RR/ALL với phần trăm nguyên 0–100.
+ARM hết hạn sau 15 giây, chỉ cho một lần chạy và phải đến từ cùng kết nối
+USB/Wi-Fi với lệnh chạy. Kiểm thử máy tính dùng PWM/timer giả lập; chưa thay
+thế kiểm tra timing, nguồn và động cơ thật.
+
+### Mô hình không cập nhật roll/pitch/yaw
+
+Xem Data và trạng thái stream trong app. Data = 0: kiểm tra đã nạp sketch
+chính (MotorTest độc lập không có Q), đợi hiệu chuẩn, hoặc xem lỗi cảm biến.
+Firmware mới bỏ qua lỗi đọc tạm thời và sau 3 lỗi liên tiếp sẽ dừng động cơ,
+thử khởi tạo/hiệu chuẩn lại cảm biến sau 1 giây. Giữ bo đứng yên khi thấy
+SENSOR_RECOVERING_KEEP_STILL. Có Q nhưng mất mô hình: xem lỗi tải GLB ở viewport.
+Nếu bo reset khi chạy động cơ, kiểm tra nguồn/dây; tự retry không khắc phục
+nguồn sụt hoặc kết nối cảm biến hỏng. Chưa xác minh nguyên nhân trên bo thật.
 
 ```powershell
 g++ -std=c++17 -I tests/firmware/motor-stubs tests/firmware/motor-control.test.cpp -o "$env:TEMP/minidrone-motor-test.exe"

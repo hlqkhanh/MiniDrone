@@ -5,6 +5,32 @@ namespace DroneMotion.Tests;
 
 public sealed class SerialProtocolParserTests
 {
+    [Theory]
+    [InlineData("0.9238795,0.3826834,0,0", 0, -45, 0)]
+    [InlineData("0.9238795,0,0.3826834,0", -45, 0, 0)]
+    [InlineData("0.9238795,0,0,0.3826834", 0, 0, 45)]
+    public void MotorStatuses_DoNotInterruptQuaternionStream(string rotation, double roll, double pitch, double yaw)
+    {
+        var parser = new SerialProtocolParser();
+        var orientation = new OrientationService();
+        var messages = parser.Feed("Q,0,0,1,0,0,0\nSTATUS,MOTOR_RUNNING\n" +
+            $"Q,1,10000,{rotation}\nSTATUS,MOTOR_STOPPED\n");
+        foreach (var sample in messages.OfType<QuaternionMessage>()) orientation.Update(sample.Orientation);
+        Assert.Equal(2, messages.OfType<QuaternionMessage>().Count());
+        Assert.True(orientation.TryGetDisplayOrientation(out _, out var angles));
+        Assert.Equal(roll, angles.Roll, 3);
+        Assert.Equal(pitch, angles.Pitch, 3);
+        Assert.Equal(yaw, angles.Yaw, 3);
+    }
+
+    [Fact]
+    public void StandaloneMotorSketch_IsReportedAsWrongFirmware()
+    {
+        var parser = new SerialProtocolParser();
+        var message = Assert.IsType<ErrorMessage>(Assert.Single(parser.Feed("MOTOR_TEST,PROPELLERS_OFF\n")));
+        Assert.Equal("WRONG_FIRMWARE_MOTOR_TEST_USE_MAIN_SKETCH", message.Code);
+    }
+
     [Fact]
     public void Feed_ParsesFragmentedQuaternionLine()
     {

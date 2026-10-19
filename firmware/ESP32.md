@@ -34,7 +34,7 @@ SPI chạy 1 MHz, mode 0. Các thanh ghi cấu hình được đọc lại để
 
 Nếu muốn kiểm tra nhận dạng trước, mở [ImuSpiProbe.ino](ImuSpiProbe/ImuSpiProbe.ino), nạp lên ESP32 và mở Serial Monitor 115200. Sketch chỉ đọc WHO_AM_I mỗi giây, không ghi thanh ghi cấu hình cảm biến. Mong đợi `PROBE,WHO_AM_I,0x70,MPU6500` hoặc `PROBE,WHO_AM_I,0x71,MPU9250` ổn định. Nếu mã khác, gửi log để kiểm tra. Probe không gửi quaternion nên chưa dùng được với app 3D; sau khi nhận dạng, nạp sketch chính theo các bước dưới đây.
 
-1. Tháo cánh hoặc ngắt các giắc động cơ khi thử. Firmware đặt GPIO14/15/12/13 LOW khi khởi động. Chỉ phát PWM khi nhận lệnh MOTOR ARM rồi MOTOR LF/RF/LR/RR/ALL từ app hoặc Serial Monitor; giới hạn 35% PWM và 2 giây mỗi lần. Đây không phải firmware bay. Giữ toàn bộ file header cùng sketch, gồm MotorControl.h và MotionCompensation.h.
+1. Tháo cánh hoặc ngắt các giắc động cơ khi thử. Firmware đặt GPIO14/15/12/13 LOW khi khởi động; PWM được gắn khi ARM. Phần MANUAL MOTOR OUTPUT trong app hỗ trợ PWM 0–100% riêng từng động cơ, thời gian tùy chọn hoặc liên tục. KEEPALIVE mất 2 giây sẽ dừng; xem README gốc để biết giao thức V2. Đây không phải firmware bay. Giữ toàn bộ file header cùng sketch, gồm MotorControl.h và MotionCompensation.h.
 2. Mở đúng file .ino trên đĩa bằng **File > Open** trong Arduino IDE. Nếu trước đó dán code vào sketch_oct16a, cần mở file dự án hoặc chép lại toàn bộ code mới; tab cũ không tự cập nhật.
 3. Chọn **ESP32 Dev Module**, cổng USB của bo (máy đã dùng COM6), **Upload Speed = 115200**. Đóng Serial Monitor và Disconnect trong app trước khi Upload.
 4. Bấm Verify rồi Upload. Nếu kẹt Connecting, giữ BOOT, nhấn/thả EN, thả BOOT khi bắt đầu ghi.

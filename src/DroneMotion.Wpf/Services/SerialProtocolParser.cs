@@ -67,6 +67,9 @@ public sealed class SerialProtocolParser
         var fields = line.Split(',', StringSplitOptions.TrimEntries);
         switch (fields[0])
         {
+            case "MOTOR_TEST":
+                message = new ErrorMessage("WRONG_FIRMWARE_MOTOR_TEST_USE_MAIN_SKETCH");
+                return true;
             case "HELLO" when fields.Length == 3 &&
                                    int.TryParse(fields[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var version) &&
                                    int.TryParse(fields[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var rate):

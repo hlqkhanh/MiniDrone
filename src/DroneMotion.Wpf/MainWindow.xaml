@@ -9,6 +9,9 @@
         Width="1180" Height="720" MinWidth="900" MinHeight="580"
         Background="#0B1120" Foreground="#E2E8F0"
         Closed="Window_OnClosed">
+    <Window.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding StopMotorsCommand}"/>
+    </Window.InputBindings>
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
         <Style TargetType="Button">
@@ -79,12 +82,14 @@
                     <WrapPanel Margin="0,0,0,10">
                         <Button Content="Calibrate" Command="{Binding CalibrateCommand}"/>
                         <Button Content="Zero orientation" Command="{Binding ZeroCommand}"/>
+                        <Button Content="STOP ALL (Esc)" Command="{Binding StopMotorsCommand}" Background="#991B1B"/>
                     </WrapPanel>
 
                     <Border Background="#0F172A" CornerRadius="7" Padding="10" Margin="0,0,0,18">
                         <StackPanel>
                             <TextBlock Text="{Binding ConnectionStatus}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                             <TextBlock Text="{Binding DeviceStatus}" Foreground="#94A3B8" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding TelemetryStatus}" Foreground="#67E8F9" TextWrapping="Wrap" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
@@ -110,28 +115,44 @@
 
                     <Border Background="#172033" CornerRadius="7" Padding="10" Margin="0,4,0,16">
                         <StackPanel>
-                            <TextBlock Text="MOTOR TEST" FontWeight="Bold"/>
-                            <TextBlock Text="Remove ALL propellers. Use the correct motor battery supply."
+                            <TextBlock Text="MANUAL MOTOR OUTPUT" FontWeight="Bold"/>
+                            <TextBlock Text="Remove all propellers. Manual PWM has no flight stabilization."
                                        Foreground="#FBBF24" TextWrapping="Wrap" Margin="0,6,0,8"/>
                             <CheckBox Content="All propellers are removed" IsChecked="{Binding PropellersRemoved}"
                                       Foreground="#E2E8F0" Margin="0,0,0,8"/>
-                            <TextBlock Text="LF: front left · RF: front right&#10;LR: rear left · RR: rear right&#10;ALL: all four motors"
+                            <TextBlock Text="LF/RF: front left/right · LR/RR: rear left/right. CUSTOM uses four independent values."
                                        Foreground="#94A3B8" TextWrapping="Wrap" FontSize="11"/>
                             <ComboBox ItemsSource="{Binding MotorTargets}" SelectedItem="{Binding SelectedMotor}"/>
-                            <TextBlock Text="{Binding MotorPercent, StringFormat=PWM: {0}%}"/>
-                            <Slider Minimum="1" Maximum="35" TickFrequency="1" IsSnapToTickEnabled="True"
-                                    Value="{Binding MotorPercent}" Margin="0,6,0,10"/>
-                            <TextBlock Text="Duration (ms, 1–2000)"/>
-                            <TextBox x:Name="MotorDurationInput" Text="{Binding MotorDuration, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"
-                                     Padding="6" Margin="0,5,0,10"/>
+                            <TextBlock Text="Common PWM % (selected motor / ALL)" TextWrapping="Wrap"/>
+                            <TextBox x:Name="MotorCommonInput" Text="{Binding MotorPercent, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" Padding="5"/>
+                            <Slider Minimum="0" Maximum="100" TickFrequency="0.1" IsSnapToTickEnabled="True"
+                                    Value="{Binding MotorPercent}" Margin="0,6,0,8"/>
+                            <Button Content="Copy common PWM to all four" Command="{Binding CopyMotorPwmCommand}"/>
+                            <TextBlock Text="CUSTOM — independent PWM %" FontWeight="SemiBold" Margin="0,3,0,7"/>
+                            <DockPanel><TextBlock Text="LF  " VerticalAlignment="Center"/><TextBox x:Name="MotorLFInput" Text="{Binding MotorLF, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" Padding="5"/></DockPanel>
+                            <Slider Minimum="0" Maximum="100" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding MotorLF}" Margin="0,4,0,8"/>
+                            <DockPanel><TextBlock Text="RF  " VerticalAlignment="Center"/><TextBox x:Name="MotorRFInput" Text="{Binding MotorRF, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" Padding="5"/></DockPanel>
+                            <Slider Minimum="0" Maximum="100" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding MotorRF}" Margin="0,4,0,8"/>
+                            <DockPanel><TextBlock Text="LR  " VerticalAlignment="Center"/><TextBox x:Name="MotorLRInput" Text="{Binding MotorLR, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" Padding="5"/></DockPanel>
+                            <Slider Minimum="0" Maximum="100" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding MotorLR}" Margin="0,4,0,8"/>
+                            <DockPanel><TextBlock Text="RR  " VerticalAlignment="Center"/><TextBox x:Name="MotorRRInput" Text="{Binding MotorRR, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" Padding="5"/></DockPanel>
+                            <Slider Minimum="0" Maximum="100" TickFrequency="0.1" IsSnapToTickEnabled="True" Value="{Binding MotorRR}" Margin="0,4,0,8"/>
+                            <TextBlock Text="Duration (ms, e.g. 60000 = 1 minute)" TextWrapping="Wrap"/>
+                            <TextBox Text="{Binding MotorDuration, UpdateSourceTrigger=PropertyChanged}" Padding="6" Margin="0,5,0,10"/>
+                            <CheckBox Content="Continuous until STOP" IsChecked="{Binding ContinuousMotors}" Foreground="#E2E8F0" Margin="0,0,0,8"/>
+                            <TextBlock Text="{Binding MotorPreview}" Foreground="#94A3B8" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock Text="Edits apply only when you click Run / apply; this restarts the duration. Link loss stops outputs after about 2 seconds."
+                                       Foreground="#94A3B8" TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"/>
                             <WrapPanel>
-                                <Button Content="Run test" Command="{Binding RunMotorCommand}">
+                                <Button Content="Run / apply" Command="{Binding RunMotorCommand}">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding ElementName=MotorDurationInput, Path=(Validation.HasError)}" Value="True">
-                                                    <Setter Property="IsEnabled" Value="False"/>
-                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ElementName=MotorCommonInput, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding ElementName=MotorLFInput, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding ElementName=MotorRFInput, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding ElementName=MotorLRInput, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding ElementName=MotorRRInput, Path=(Validation.HasError)}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Button.Style>
@@ -141,7 +162,6 @@
                             <TextBlock Text="{Binding MotorStatus}" TextWrapping="Wrap" Foreground="#67E8F9"/>
                         </StackPanel>
                     </Border>
-
                     <TextBlock Text="PERFORMANCE" FontSize="11" Foreground="#94A3B8" Margin="0,5,0,7"/>
                     <TextBlock Text="{Binding SampleRate, StringFormat=Data: {0:F0} samples/s}"/>
                     <TextBlock Text="{Binding FramesPerSecond, StringFormat=Viewport: {0:F0} FPS}" Margin="0,3,0,0"/>

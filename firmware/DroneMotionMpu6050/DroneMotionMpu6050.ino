@@ -50,6 +50,8 @@ float qX = 0.0f;
 float qY = 0.0f;
 float qZ = 0.0f;
 bool sensorAvailable = false;
+uint8_t consecutiveReadFailures = 0;
+uint32_t retrySensorAt = 0;
 uint32_t sequenceNumber = 0;
 uint32_t previousUpdateMicros = 0;
 uint32_t nextSampleMicros = 0;
@@ -444,6 +446,8 @@ void handleCommand(const char *command, bool wifi) {
       return;
     }
     sensorAvailable = calibrateGyroscope();
+    consecutiveReadFailures = 0;
+    retrySensorAt = millis() + 1000;
   } else if (strcmp(command, "INFO") == 0) {
     Motors.report(Telemetry);
     Telemetry.reportWifiInfo();
@@ -521,7 +525,20 @@ void loop() {
 #endif
 
   if (!sensorAvailable) {
-    // Fast blink indicates that the sensor is missing or unreadable.
+    // Previously one SPI glitch stopped Q telemetry permanently until CAL.
+    // Stop outputs, then retry initialization/calibration without a power cycle.
+    if (static_cast<int32_t>(millis() - retrySensorAt) >= 0) {
+      Motors.stop();
+      Telemetry.println(F("STATUS,SENSOR_RECOVERING_KEEP_STILL"));
+      const bool initialized = initializeSensor();
+      sensorAvailable = initialized && calibrateGyroscope();
+      consecutiveReadFailures = 0;
+      retrySensorAt = millis() + 1000;
+      if (!sensorAvailable) {
+        Telemetry.print(F("ERROR,SENSOR_RECOVERY_FAILED_"));
+        Telemetry.println(initialized ? "CALIBRATION_KEEP_STILL" : initializationError);
+      }
+    }
     setStatusLed((millis() / 100) % 2);
     delay(5);
     return;
@@ -539,10 +556,15 @@ void loop() {
   RawSample sample;
   if (!readRawSample(sample)) {
     Motors.stop();
-    Telemetry.println(F("ERROR,MPU_READ"));
-    sensorAvailable = false;
+    motionCompensation.reset();
+    if (++consecutiveReadFailures >= 3) {
+      Telemetry.println(F("ERROR,MPU_READ_RECOVERING"));
+      sensorAvailable = false;
+      retrySensorAt = millis() + 1000;
+    }
     return;
   }
+  consecutiveReadFailures = 0;
 
   float dt = static_cast<uint32_t>(now - previousUpdateMicros) / 1000000.0f;
   previousUpdateMicros = now;
