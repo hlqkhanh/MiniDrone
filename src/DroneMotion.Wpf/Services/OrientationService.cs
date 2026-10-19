@@ -7,11 +7,10 @@ public readonly record struct EulerAngles(double Roll, double Pitch, double Yaw)
 public sealed class OrientationService
 {
     // The GLB's USB end is +Z, its top is +Y and its right side is -X.
-    // On the mounted board, +sensor X lifts the USB end (pitch) and
-    // +sensor Y lowers the right side (roll). Keep sensor Z mapped to +Y.
-    // This proper rotation maps sensor X/Y/Z to model -X/+Z/+Y.
+    // Reverse pitch and roll for the mounted board while preserving yaw.
+    // This proper rotation maps sensor X/Y/Z to model +X/-Z/+Y.
     private static readonly Quaternion SensorToWpfBasis =
-        new(0, MathF.Sqrt(0.5f), MathF.Sqrt(0.5f), 0);
+        new(-MathF.Sqrt(0.5f), 0, 0, MathF.Sqrt(0.5f));
 
     private readonly object _sync = new();
     private Quaternion _current = Quaternion.Identity;
@@ -88,13 +87,13 @@ public sealed class OrientationService
         }
 
         // Name the angles according to this board mounting: sensor X is
-        // nose-up pitch, sensor Y is right bank. Preserve the yaw convention.
+        // pitch, sensor Y is roll. Reverse both displayed signs; preserve yaw.
         var sensorRelative = Quaternion.Normalize(
             Quaternion.Inverse(SensorToWpfBasis) * orientation * SensorToWpfBasis);
         var sensorAngles = ToEulerDegrees(sensorRelative);
         euler = new EulerAngles(
-            Roll: sensorAngles.Pitch,
-            Pitch: sensorAngles.Roll,
+            Roll: -sensorAngles.Pitch,
+            Pitch: -sensorAngles.Roll,
             Yaw: sensorAngles.Yaw);
         return true;
     }

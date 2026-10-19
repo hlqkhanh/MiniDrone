@@ -5,6 +5,7 @@
 #endif
 #include <math.h>
 #include "TelemetryOutput.h"
+#include "MotionCompensation.h"
 
 namespace Config {
 #if defined(ARDUINO_ARCH_ESP32)
@@ -42,6 +43,7 @@ struct RawSample {
 float gyroBiasX = 0.0f;
 float gyroBiasY = 0.0f;
 float gyroBiasZ = 0.0f;
+MotionCompensation motionCompensation;
 float qW = 1.0f;
 float qX = 0.0f;
 float qY = 0.0f;
@@ -333,6 +335,7 @@ bool calibrateGyroscope() {
   gyroBiasX = static_cast<float>(sumGx) / Config::CalibrationSamples;
   gyroBiasY = static_cast<float>(sumGy) / Config::CalibrationSamples;
   gyroBiasZ = static_cast<float>(sumGz) / Config::CalibrationSamples;
+  motionCompensation.reset();
   setInitialOrientation(
       static_cast<float>(sumAx) / Config::CalibrationSamples,
       static_cast<float>(sumAy) / Config::CalibrationSamples,
@@ -351,6 +354,7 @@ bool calibrateGyroscope() {
 }
 
 void updateMadgwick(float gx, float gy, float gz, float ax, float ay, float az, float dt) {
+  const float beta = Config::MadgwickBeta * MotionCompensation::accelerationWeight(ax, ay, az);
   float qDotW = 0.5f * (-qX * gx - qY * gy - qZ * gz);
   float qDotX = 0.5f * ( qW * gx + qY * gz - qZ * gy);
   float qDotY = 0.5f * ( qW * gy - qX * gz + qZ * gx);
@@ -388,10 +392,10 @@ void updateMadgwick(float gx, float gy, float gz, float ax, float ay, float az, 
       stepX *= inverseStepNorm;
       stepY *= inverseStepNorm;
       stepZ *= inverseStepNorm;
-      qDotW -= Config::MadgwickBeta * stepW;
-      qDotX -= Config::MadgwickBeta * stepX;
-      qDotY -= Config::MadgwickBeta * stepY;
-      qDotZ -= Config::MadgwickBeta * stepZ;
+      qDotW -= beta * stepW;
+      qDotX -= beta * stepX;
+      qDotY -= beta * stepY;
+      qDotZ -= beta * stepZ;
     }
   }
 
@@ -523,12 +527,23 @@ void loop() {
   float dt = static_cast<uint32_t>(now - previousUpdateMicros) / 1000000.0f;
   previousUpdateMicros = now;
   if (dt < 0.001f || dt > 0.05f) {
+    motionCompensation.reset();
     dt = 1.0f / Config::SampleRateHz;
   }
 
   const float ax = sample.ax / Config::AccelScale;
   const float ay = sample.ay / Config::AccelScale;
   const float az = sample.az / Config::AccelScale;
+  float bx = gyroBiasX / Config::GyroScale;
+  float by = gyroBiasY / Config::GyroScale;
+  float bz = gyroBiasZ / Config::GyroScale;
+  motionCompensation.update(ax, ay, az,
+      sample.gx / Config::GyroScale - bx,
+      sample.gy / Config::GyroScale - by,
+      sample.gz / Config::GyroScale - bz, dt, bx, by, bz);
+  gyroBiasX = bx * Config::GyroScale;
+  gyroBiasY = by * Config::GyroScale;
+  gyroBiasZ = bz * Config::GyroScale;
   const float gx = ((sample.gx - gyroBiasX) / Config::GyroScale) * Config::DegreesToRadians;
   const float gy = ((sample.gy - gyroBiasY) / Config::GyroScale) * Config::DegreesToRadians;
   const float gz = ((sample.gz - gyroBiasZ) / Config::GyroScale) * Config::DegreesToRadians;

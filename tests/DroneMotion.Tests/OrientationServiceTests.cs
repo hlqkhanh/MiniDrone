@@ -82,7 +82,7 @@ public sealed class OrientationServiceTests
     [Theory]
     [InlineData(45.0f)]
     [InlineData(-45.0f)]
-    public void SensorXRotation_LiftsUsbEndWithoutBanking(float degrees)
+    public void SensorXRotation_LowersUsbEndWithoutBanking(float degrees)
     {
         var service = new OrientationService();
         service.Update(Quaternion.Identity);
@@ -94,19 +94,19 @@ public sealed class OrientationServiceTests
 
         var nose = Vector3.Transform(Vector3.UnitZ, display);
         Assert.Equal(0.0f, nose.X, 5);
-        Assert.Equal(MathF.Sin(radians), nose.Y, 5);
+        Assert.Equal(-MathF.Sin(radians), nose.Y, 5);
         Assert.Equal(MathF.Cos(radians), nose.Z, 5);
         var rightEdge = Vector3.Transform(-Vector3.UnitX, display);
         Assert.Equal(0.0f, rightEdge.Y, 5);
         Assert.Equal(0.0, angles.Roll, 3);
-        Assert.Equal(degrees, angles.Pitch, 3);
+        Assert.Equal(-degrees, angles.Pitch, 3);
         Assert.Equal(0.0, angles.Yaw, 3);
     }
 
     [Theory]
     [InlineData(45.0f)]
     [InlineData(-45.0f)]
-    public void SensorYRotation_LowersRightSideWithoutPitching(float degrees)
+    public void SensorYRotation_LiftsRightSideWithoutPitching(float degrees)
     {
         var service = new OrientationService();
         service.Update(Quaternion.Identity);
@@ -118,11 +118,11 @@ public sealed class OrientationServiceTests
 
         var rightEdge = Vector3.Transform(-Vector3.UnitX, display);
         Assert.Equal(-MathF.Cos(radians), rightEdge.X, 5);
-        Assert.Equal(-MathF.Sin(radians), rightEdge.Y, 5);
+        Assert.Equal(MathF.Sin(radians), rightEdge.Y, 5);
         Assert.Equal(0.0f, rightEdge.Z, 5);
         var nose = Vector3.Transform(Vector3.UnitZ, display);
         Assert.Equal(0.0f, nose.Y, 5);
-        Assert.Equal(degrees, angles.Roll, 3);
+        Assert.Equal(-degrees, angles.Roll, 3);
         Assert.Equal(0.0, angles.Pitch, 3);
         Assert.Equal(0.0, angles.Yaw, 3);
     }
@@ -138,9 +138,9 @@ public sealed class OrientationServiceTests
         Assert.True(service.Update(initial * motion));
         Assert.True(service.TryGetDisplayOrientation(out var relative, out _));
 
-        // The USB end (+model Z) corresponds to +sensor Y.
-        var sensorForward = Vector3.Transform(Vector3.UnitY, motion);
-        var expectedForward = new Vector3(-sensorForward.X, sensorForward.Z, sensorForward.Y);
+        // The USB end (+model Z) corresponds to -sensor Y.
+        var sensorForward = Vector3.Transform(-Vector3.UnitY, motion);
+        var expectedForward = new Vector3(sensorForward.X, sensorForward.Z, -sensorForward.Y);
         var actualForward = Vector3.Transform(Vector3.UnitZ, relative);
         Assert.True(Vector3.Distance(expectedForward, actualForward) < 1e-5f);
         Assert.Equal(1.0f, relative.Length(), 5);

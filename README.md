@@ -63,6 +63,28 @@ PONG
 
 ## Kiểm thử
 
+### Giảm trôi yaw
+
+Firmware bù gyro bias từ từ sau ít nhất 3 giây có tốc độ góc dư dưới
+0.15 độ/giây, gia tốc gần 1 g và ít thay đổi giữa các mẫu. Khi phát hiện
+chuyển động hoặc gián đoạn lấy mẫu, thời gian chờ được tính lại. Hiệu chỉnh
+Madgwick từ accelerometer giảm dần khi độ lớn gia tốc lệch 1 g từ 0.05 g
+đến 0.20 g, nhằm giảm ảnh hưởng khi dịch chuyển.
+
+Đây là giảm drift, không phải khóa hướng tuyệt đối: quay rất chậm dưới
+ngưỡng nhận diện vẫn có thể bị coi là bias; gia tốc ngang cũng không luôn
+được phát hiện chỉ bằng độ lớn. Không tự đặt yaw về 0 khi đứng yên.
+Sau khi nạp lại firmware, giữ bo đứng yên để Calibrate, bấm Zero orientation,
+đo yaw khi đứng yên 60 giây và khi đưa bo về cùng mốc hướng 10 lần.
+Cần kiểm tra trên bo thật để đánh giá mức cải thiện.
+
+Kiểm thử bù bias bằng dữ liệu giả (C++11):
+
+```powershell
+g++ -std=c++11 tests/firmware/motion-compensation.test.cpp -o "$env:TEMP/motion-compensation-test.exe"
+& "$env:TEMP/motion-compensation-test.exe"
+```
+
 ```powershell
 dotnet test .\DroneMotion.sln
 ```
