@@ -63,6 +63,42 @@ PONG
 
 ## Kiểm thử
 
+### Thử động cơ từ ứng dụng WPF (ESP32)
+
+Nạp lại sketch chính `firmware/DroneMotionMpu6050/DroneMotionMpu6050.ino`
+với Arduino-ESP32 core 3.x, giữ toàn bộ file header cùng thư mục, gồm
+`MotorControl.h` và `MotionCompensation.h`. Build/chạy lại app WPF.
+
+Trong phần **MOTOR TEST**, tháo toàn bộ cánh quạt, xác nhận **All propellers
+are removed**, chọn LF/RF/LR/RR hoặc ALL, đặt PWM 1–35% và thời gian
+1–2000 ms, rồi bấm **Run test**. LF/RF là trái/phải trước, LR/RR là
+trái/phải sau theo sơ đồ GPIO14/15/12/13. PWM không phải tốc độ quay đo được.
+Động cơ cần nguồn VBAT phù hợp theo sơ đồ, không chỉ cắm USB.
+
+**STOP ALL** dừng tất cả. Mỗi lần chạy cần ARM mới (app tự gửi khi bấm
+Run test). ESP32 dùng timer task độc lập để tắt PWM khi hết thời gian;
+không dựa vào đồng hồ của app. Disconnect/đóng app gửi STOP nếu còn kết nối;
+mất Wi-Fi được dừng khi firmware phát hiện, còn rút USB vẫn có giới hạn timer.
+Calibrate dừng động cơ trước khi đo bias. Reset không tự chạy động cơ.
+Arduino Nano và firmware cũ không bật được nút Run test.
+
+Có thể gửi thủ công qua Serial Monitor (115200, Newline):
+
+```text
+MOTOR ARM
+MOTOR LF 20 1000
+MOTOR STOP
+```
+
+Thay LF bằng RF/LR/RR/ALL. ARM hết hạn sau 15 giây, chỉ cho một lần chạy
+và phải đến từ cùng kết nối USB/Wi-Fi với lệnh chạy. Các kiểm thử máy tính
+dùng PWM/timer giả lập; chưa thay thế kiểm tra timing, nguồn và động cơ thật.
+
+```powershell
+g++ -std=c++17 -I tests/firmware/motor-stubs tests/firmware/motor-control.test.cpp -o "$env:TEMP/minidrone-motor-test.exe"
+& "$env:TEMP/minidrone-motor-test.exe"
+```
+
 ### Giảm trôi yaw
 
 Firmware bù gyro bias từ từ sau ít nhất 3 giây có tốc độ góc dư dưới

@@ -1,6 +1,6 @@
 ﻿# Cấu hình Wi-Fi ESP32 bằng điện thoại hoặc laptop
 
-ESP32 phát Wi-Fi cấu hình để bạn mở trình duyệt, quét/chọn mạng và nhập mật khẩu. Sau khi kết nối router thành công, cấu hình được lưu trong flash (NVS), lần bật sau tự kết nối lại. App 3D dùng IP của ESP32 trong mạng router và port 3333. Động cơ vẫn tắt.
+ESP32 phát Wi-Fi cấu hình để bạn mở trình duyệt, quét/chọn mạng và nhập mật khẩu. Sau khi kết nối router thành công, cấu hình được lưu trong flash (NVS), lần bật sau tự kết nối lại. App 3D dùng IP của ESP32 trong mạng router và port 3333. Động cơ mặc định tắt; phần MOTOR TEST trong app cho phép thử từng động cơ hoặc cả bốn sau khi tháo cánh, tối đa 35% PWM trong 2 giây.
 
 ## 1. Nạp firmware một lần
 

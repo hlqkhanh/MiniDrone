@@ -108,6 +108,40 @@
                         </StackPanel>
                     </Grid>
 
+                    <Border Background="#172033" CornerRadius="7" Padding="10" Margin="0,4,0,16">
+                        <StackPanel>
+                            <TextBlock Text="MOTOR TEST" FontWeight="Bold"/>
+                            <TextBlock Text="Remove ALL propellers. Use the correct motor battery supply."
+                                       Foreground="#FBBF24" TextWrapping="Wrap" Margin="0,6,0,8"/>
+                            <CheckBox Content="All propellers are removed" IsChecked="{Binding PropellersRemoved}"
+                                      Foreground="#E2E8F0" Margin="0,0,0,8"/>
+                            <TextBlock Text="LF: front left · RF: front right&#10;LR: rear left · RR: rear right&#10;ALL: all four motors"
+                                       Foreground="#94A3B8" TextWrapping="Wrap" FontSize="11"/>
+                            <ComboBox ItemsSource="{Binding MotorTargets}" SelectedItem="{Binding SelectedMotor}"/>
+                            <TextBlock Text="{Binding MotorPercent, StringFormat=PWM: {0}%}"/>
+                            <Slider Minimum="1" Maximum="35" TickFrequency="1" IsSnapToTickEnabled="True"
+                                    Value="{Binding MotorPercent}" Margin="0,6,0,10"/>
+                            <TextBlock Text="Duration (ms, 1–2000)"/>
+                            <TextBox x:Name="MotorDurationInput" Text="{Binding MotorDuration, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"
+                                     Padding="6" Margin="0,5,0,10"/>
+                            <WrapPanel>
+                                <Button Content="Run test" Command="{Binding RunMotorCommand}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ElementName=MotorDurationInput, Path=(Validation.HasError)}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Content="STOP ALL" Command="{Binding StopMotorsCommand}" Background="#991B1B"/>
+                            </WrapPanel>
+                            <TextBlock Text="{Binding MotorStatus}" TextWrapping="Wrap" Foreground="#67E8F9"/>
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Text="PERFORMANCE" FontSize="11" Foreground="#94A3B8" Margin="0,5,0,7"/>
                     <TextBlock Text="{Binding SampleRate, StringFormat=Data: {0:F0} samples/s}"/>
                     <TextBlock Text="{Binding FramesPerSecond, StringFormat=Viewport: {0:F0} FPS}" Margin="0,3,0,0"/>

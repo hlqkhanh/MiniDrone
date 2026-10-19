@@ -34,6 +34,13 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private int _framesInWindow;
     private bool _isConnected;
     private bool _hasOrientation;
+    private bool _motorsAvailable;
+    private bool _propellersRemoved;
+    private string _selectedMotor = "LF";
+    private int _motorPercent = 20;
+    private int _motorDuration = 1000;
+    private string _motorStatus = "Requires updated ESP32 firmware";
+    private int _motorRequestVersion;
 
     public MainViewModel()
     {
@@ -51,6 +58,12 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync, () => IsConnected, ShowError);
         CalibrateCommand = new AsyncRelayCommand(CalibrateAsync, () => IsConnected, ShowError);
         ZeroCommand = new RelayCommand(ZeroOrientation, () => HasOrientation);
+        RunMotorCommand = new AsyncRelayCommand(RunMotorAsync,
+            () => IsConnected && _motorsAvailable && PropellersRemoved &&
+                  MotorTargets.Contains(SelectedMotor) && MotorPercent is >= 1 and <= 35 &&
+                  MotorDuration is >= 1 and <= 2000, ShowError);
+        StopMotorsCommand = new AsyncRelayCommand(StopMotorsAsync,
+            () => IsConnected, ShowError);
 
         RefreshPorts();
     }
@@ -152,6 +165,59 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ICommand DisconnectCommand { get; }
     public ICommand CalibrateCommand { get; }
     public ICommand ZeroCommand { get; }
+    public ICommand RunMotorCommand { get; }
+    public ICommand StopMotorsCommand { get; }
+    public IReadOnlyList<string> MotorTargets { get; } = ["LF", "RF", "LR", "RR", "ALL"];
+    public string SelectedMotor
+    {
+        get => _selectedMotor;
+        set { if (SetProperty(ref _selectedMotor, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+    public bool PropellersRemoved
+    {
+        get => _propellersRemoved;
+        set { if (SetProperty(ref _propellersRemoved, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+    public int MotorPercent
+    {
+        get => _motorPercent;
+        set { if (SetProperty(ref _motorPercent, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+    public int MotorDuration
+    {
+        get => _motorDuration;
+        set { if (SetProperty(ref _motorDuration, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+    public string MotorStatus { get => _motorStatus; private set => SetProperty(ref _motorStatus, value); }
+
+    private async Task RunMotorAsync()
+    {
+        // Validate again at execution; each click arms exactly one bounded test.
+        if (!IsConnected || !_motorsAvailable || !PropellersRemoved ||
+            !MotorTargets.Contains(SelectedMotor) || MotorPercent is < 1 or > 35 ||
+            MotorDuration is < 1 or > 2000) return;
+        var command = $"MOTOR {SelectedMotor} {MotorPercent} {MotorDuration}";
+        var version = ++_motorRequestVersion;
+        MotorStatus = "Requesting motor test...";
+        await SendCommandAsync("MOTOR ARM");
+        if (version != _motorRequestVersion || !IsConnected) return;
+        await SendCommandAsync(command);
+    }
+
+    private Task StopMotorsAsync()
+    {
+        ++_motorRequestVersion;
+        return SendCommandAsync("MOTOR STOP");
+    }
+
+    private void ResetMotorControls()
+    {
+        _motorsAvailable = false;
+        ++_motorRequestVersion;
+        PropellersRemoved = false;
+        MotorStatus = "Requires updated ESP32 firmware";
+        CommandManager.InvalidateRequerySuggested();
+    }
 
     public void OnRenderFrame()
     {
@@ -200,6 +266,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             var endpoint = UseWifi ? $"{WifiHost}:{WifiPort}" : SelectedPort;
+            ResetMotorControls();
             _orientation.Reset();
             DisplayQuaternion = MediaQuaternion.Identity;
             Roll = Pitch = Yaw = 0;
@@ -213,7 +280,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             if (!IsConnected) return;
             DeviceStatus = "Waiting for sensor data...";
             if (!UseWifi) await Task.Delay(2000); // USB may reset the board.
-            if (IsConnected) await SendCommandAsync("PING");
+            if (IsConnected) { await SendCommandAsync("PING"); await SendCommandAsync("INFO"); }
         }
         finally
         {
@@ -225,6 +292,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task DisconnectAsync()
     {
+        try { if (IsConnected) await StopMotorsAsync(); }
+        catch { /* The board's timer still bounds the run if transport is gone. */ }
+        ResetMotorControls();
         await _serial.DisconnectAsync();
         await _tcp.DisconnectAsync();
         IsConnected = false;
@@ -263,6 +333,27 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
         PostToUi(() =>
         {
+            if (message is StatusMessage motor && motor.Status.StartsWith("MOTOR_", StringComparison.Ordinal))
+            {
+                MotorStatus = motor.Status switch
+                {
+                    "MOTOR_AVAILABLE" => "Ready — max 35% PWM / 2 seconds",
+                    "MOTOR_UNAVAILABLE" => "Motor control unavailable on this firmware",
+                    "MOTOR_ARMED" => "Motor test armed",
+                    "MOTOR_RUNNING" => "Motor test running",
+                    "MOTOR_STOPPED" => "Motors stopped",
+                    _ => motor.Status
+                };
+                if (motor.Status is "MOTOR_AVAILABLE" or "MOTOR_UNAVAILABLE")
+                    _motorsAvailable = motor.Status == "MOTOR_AVAILABLE";
+                CommandManager.InvalidateRequerySuggested();
+                return;
+            }
+            if (message is ErrorMessage motorError && motorError.Code.StartsWith("MOTOR_", StringComparison.Ordinal))
+            {
+                MotorStatus = motorError.Code;
+                return;
+            }
             DeviceStatus = message switch
             {
                 HelloMessage hello => $"Firmware protocol {hello.ProtocolVersion}, target {hello.SampleRateHz} Hz",
@@ -279,6 +370,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         PostToUi(() =>
         {
             IsConnected = false;
+            ResetMotorControls();
             ConnectionStatus = "Disconnected";
             DeviceStatus = $"Connection lost: {reason}";
         });
@@ -301,6 +393,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        try { if (IsConnected) await StopMotorsAsync(); }
+        catch { /* Hardware timeout remains active. */ }
         _serial.MessageReceived -= OnMessageReceived;
         _serial.ConnectionLost -= OnConnectionLost;
         _tcp.MessageReceived -= OnMessageReceived;

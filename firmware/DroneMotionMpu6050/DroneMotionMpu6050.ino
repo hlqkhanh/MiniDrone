@@ -6,6 +6,7 @@
 #include <math.h>
 #include "TelemetryOutput.h"
 #include "MotionCompensation.h"
+#include "MotorControl.h"
 
 namespace Config {
 #if defined(ARDUINO_ARCH_ESP32)
@@ -53,7 +54,7 @@ uint32_t sequenceNumber = 0;
 uint32_t previousUpdateMicros = 0;
 uint32_t nextSampleMicros = 0;
 struct CommandBuffer {
-  char bytes[20];
+  char bytes[64];
   uint8_t length = 0;
   bool discard = false;
 };
@@ -62,6 +63,7 @@ CommandBuffer serialCommands;
 CommandBuffer wifiCommands;
 #endif
 TelemetryOutput Telemetry;
+MotorControl Motors;
 uint8_t mpuAddress = 0x68;
 uint8_t sensorIdentity = 0;
 const char *initializationError = "MPU_NOT_FOUND";
@@ -429,8 +431,13 @@ void sendQuaternion(uint32_t timestamp) {
   Telemetry.println();
 }
 
-void handleCommand(const char *command) {
+void handleCommand(const char *command, bool wifi) {
+  if (strncmp(command, "MOTOR ", 6) == 0) {
+    Motors.command(command + 6, wifi, Telemetry);
+    return;
+  }
   if (strcmp(command, "CAL") == 0) {
+    Motors.stop();
     if (!sensorAvailable && !initializeSensor()) {
       Telemetry.print(F("ERROR,"));
       Telemetry.println(initializationError);
@@ -438,6 +445,7 @@ void handleCommand(const char *command) {
     }
     sensorAvailable = calibrateGyroscope();
   } else if (strcmp(command, "INFO") == 0) {
+    Motors.report(Telemetry);
     Telemetry.reportWifiInfo();
     reportSensorInfo();
   } else if (strcmp(command, "PING") == 0) {
@@ -445,20 +453,20 @@ void handleCommand(const char *command) {
   }
 }
 
-void processCommands(Stream &input, CommandBuffer &buffer) {
+void processCommands(Stream &input, CommandBuffer &buffer, bool wifi = false) {
   uint8_t budget = 64;
   while (input.available() > 0 && budget--) {
     const char character = static_cast<char>(input.read());
     if (character == '\n' || character == '\r') {
       if (!buffer.discard && buffer.length > 0) {
         buffer.bytes[buffer.length] = '\0';
-        handleCommand(buffer.bytes);
+        handleCommand(buffer.bytes, wifi);
       }
       buffer.length = 0;
       buffer.discard = false;
     } else if (!buffer.discard) {
       if (buffer.length < sizeof(buffer.bytes) - 1) buffer.bytes[buffer.length++] = character;
-      else { buffer.length = 0; buffer.discard = true; }
+      else { buffer.length = 0; buffer.discard = true; Motors.stop(); }
     }
   }
 }
@@ -470,11 +478,13 @@ void setup() {
   setStatusLed(false);
   Serial.begin(Config::BaudRate);
   beginSensorBus();
+  Motors.begin();
   Telemetry.beginWifi();
   delay(100);
 
   Telemetry.print(F("HELLO,1,"));
   Telemetry.println(Config::SampleRateHz);
+  Motors.report(Telemetry);
   sensorAvailable = initializeSensor();
   if (!sensorAvailable) {
     Telemetry.print(F("ERROR,"));
@@ -487,6 +497,13 @@ void setup() {
 }
 
 void loop() {
+  Motors.poll(Telemetry,
+#if defined(ARDUINO_ARCH_ESP32)
+      Telemetry.clientStream().connected()
+#else
+      false
+#endif
+  );
   if (Telemetry.acceptClient()) {
 #if defined(ARDUINO_ARCH_ESP32)
     wifiCommands = CommandBuffer{};
@@ -494,11 +511,13 @@ void loop() {
     Telemetry.print(F("HELLO,1,"));
     Telemetry.println(Config::SampleRateHz);
     reportSensorInfo();
+    Motors.stop();
+    Motors.report(Telemetry);
     Telemetry.println(sensorAvailable ? F("STATUS,READY") : F("ERROR,SENSOR_NOT_READY_SEND_CAL"));
   }
   processCommands(Serial, serialCommands);
 #if defined(ARDUINO_ARCH_ESP32)
-  processCommands(Telemetry.clientStream(), wifiCommands);
+  processCommands(Telemetry.clientStream(), wifiCommands, true);
 #endif
 
   if (!sensorAvailable) {
@@ -519,6 +538,7 @@ void loop() {
 
   RawSample sample;
   if (!readRawSample(sample)) {
+    Motors.stop();
     Telemetry.println(F("ERROR,MPU_READ"));
     sensorAvailable = false;
     return;
