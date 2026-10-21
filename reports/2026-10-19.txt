@@ -1,0 +1,6 @@
+Báo cáo ngày 19/10/2026
+- Sửa chiều roll/pitch và bổ sung cơ chế giảm trôi yaw.
+- Cải thiện xử lý lỗi, tự khôi phục kết nối cảm biến khi mất dữ liệu.
+- Thêm điều khiển từng động cơ hoặc cả bốn, chỉnh PWM và thời gian chạy.
+- Bổ sung nút dừng khẩn, tự dừng khi mất kết nối; hoàn thành 45 kiểm thử.
+- Tìm hiểu kiến trúc mở rộng web/mobile và kiểm tra cách lắp cánh quạt.

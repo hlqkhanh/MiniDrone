@@ -28,7 +28,7 @@ Khi chọn ESP32, sketch dùng SPI theo [sơ đồ bo](../doc/vi/so-do-nguyen-ly
 | 0x00 / 0xFF hoặc phản hồi không ổn định | Dừng, báo MPU_NOT_FOUND |
 | Mã khác, kể cả 0x73 | Dừng, báo MPU_UNSUPPORTED_ID; cần đối chiếu model trước khi bổ sung driver |
 
-SPI chạy 1 MHz, mode 0. Các thanh ghi cấu hình được đọc lại để xác nhận. Quaternion được tính ở 100 Hz bằng Madgwick với gia tốc/gyro; yaw vẫn có thể trôi vì chưa dùng từ kế.
+SPI chạy 1 MHz, mode 0. Các thanh ghi cấu hình được đọc lại để xác nhận. IMU, Madgwick và vòng cân bằng chạy ở 200 Hz; quaternion gửi ra 100 Hz. Yaw vẫn có thể trôi vì chưa dùng từ kế. Xem [hướng dẫn cân bằng PID trên đế](../doc/vi/pid-can-bang-tren-de.md) để chỉnh Kp/Ki/Kd trên WPF.
 
 ## Nạp và kiểm tra
 
@@ -41,7 +41,7 @@ Nếu muốn kiểm tra nhận dạng trước, mở [ImuSpiProbe.ino](ImuSpiPro
 5. Mở Serial Monitor ở **115200 baud**, nhấn EN, giữ bo đứng yên khoảng 3 giây. Ví dụ với MPU6500:
 
 ```text
-HELLO,1,100
+HELLO,1,200
 STATUS,SPI_SCK18_MOSI23_MISO19_CS5
 STATUS,WHO_AM_I_0x70
 STATUS,SENSOR_MPU6500

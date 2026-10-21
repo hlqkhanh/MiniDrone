@@ -11,6 +11,8 @@ public sealed record StatusMessage(string Status) : ProtocolMessage;
 public sealed record ErrorMessage(string Code) : ProtocolMessage;
 
 public sealed record PongMessage : ProtocolMessage;
+public sealed record PidMessage(PidSettings Settings) : ProtocolMessage;
+public sealed record ControlTelemetryMessage(string Csv, double[] Values) : ProtocolMessage;
 
 public sealed record QuaternionMessage(
     uint Sequence,

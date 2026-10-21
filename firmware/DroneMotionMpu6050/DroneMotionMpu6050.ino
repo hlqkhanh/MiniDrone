@@ -7,6 +7,8 @@
 #include "TelemetryOutput.h"
 #include "MotionCompensation.h"
 #include "MotorControl.h"
+#include "FlightController.h"
+#include <stdio.h>
 
 namespace Config {
 #if defined(ARDUINO_ARCH_ESP32)
@@ -22,7 +24,12 @@ constexpr int LedPin = -1;
 constexpr int LedPin = LED_BUILTIN;
 #endif
 constexpr uint32_t BaudRate = 115200;
+#if defined(ARDUINO_ARCH_ESP32)
+constexpr uint16_t SampleRateHz = 200;
+#else
 constexpr uint16_t SampleRateHz = 100;
+#endif
+constexpr uint8_t SampleDivider = 1000 / SampleRateHz - 1;
 constexpr uint32_t SamplePeriodMicros = 1000000UL / SampleRateHz;
 constexpr uint16_t CalibrationSamples = 500;
 constexpr uint32_t CalibrationTimeoutMillis = 15000;
@@ -66,6 +73,11 @@ CommandBuffer wifiCommands;
 #endif
 TelemetryOutput Telemetry;
 MotorControl Motors;
+Flight::Controller FlightControl;
+bool controlArmed = false;
+uint32_t controlArmedAt = 0;
+bool controlOwnerWifi = false;
+uint32_t lastControlSample = 0;
 uint8_t mpuAddress = 0x68;
 uint8_t sensorIdentity = 0;
 const char *initializationError = "MPU_NOT_FOUND";
@@ -220,9 +232,9 @@ bool initializeSensor() {
   if (!configureRegister(0x6B, 0x01) || !configureRegister(0x6C, 0x00)) return false;
   delay(200);
 
-  // DLPF enabled; 1 kHz / (1 + 9) = 100 Hz, +/-2 g, +/-500 deg/s.
+  // DLPF enabled; ESP32 200 Hz, Nano 100 Hz, +/-2 g, +/-500 deg/s.
   bool configured = configureRegister(0x1A, 0x03) &&
-                    configureRegister(0x19, 0x09) &&
+                    configureRegister(0x19, Config::SampleDivider) &&
                     configureRegister(0x1B, 0x08) &&
                     configureRegister(0x1C, 0x00);
 #if defined(ARDUINO_ARCH_ESP32)
@@ -277,7 +289,7 @@ void setInitialOrientation(float ax, float ay, float az) {
 
 bool calibrateGyroscope() {
   Telemetry.println(F("STATUS,CALIBRATING"));
-  // Temporarily sample at 200 Hz so 500 calibration readings take ~2.5 s.
+  // Sample at 200 Hz so 500 calibration readings take ~2.5 s.
   if (!configureRegister(0x19, 0x04)) {
     Telemetry.println(F("ERROR,MPU_CONFIG"));
     return false;
@@ -345,7 +357,7 @@ bool calibrateGyroscope() {
       static_cast<float>(sumAy) / Config::CalibrationSamples,
       static_cast<float>(sumAz) / Config::CalibrationSamples);
 
-  if (!configureRegister(0x19, 0x09)) {
+  if (!configureRegister(0x19, Config::SampleDivider)) {
     Telemetry.println(F("ERROR,MPU_CONFIG"));
     return false;
   }
@@ -433,13 +445,84 @@ void sendQuaternion(uint32_t timestamp) {
   Telemetry.println();
 }
 
+void stopControl(const char *reason) {
+  FlightControl.stop(); controlArmed = false; Motors.stop();
+  motionCompensation.reset();
+  Telemetry.print(F("STATUS,")); Telemetry.println(reason);
+}
+void stopControl() { stopControl("CONTROL_STOPPED"); }
+
+void reportPID() {
+#if defined(ARDUINO_ARCH_ESP32)
+  Telemetry.println(F("STATUS,CONTROL_V1"));
+#endif
+  for (int axis=1;axis<=2;axis++) {
+    const Flight::Gains &g = axis == 1 ? FlightControl.rollPID.gains : FlightControl.pitchPID.gains;
+    Telemetry.print(F("PID,")); Telemetry.print(axis == 1 ? "ROLL," : "PITCH,");
+    Telemetry.print(g.kp, 6); Telemetry.print(','); Telemetry.print(g.ki, 6);
+    Telemetry.print(','); Telemetry.println(g.kd, 6);
+  }
+}
+
 void handleCommand(const char *command, bool wifi) {
+  if (strncmp(command, "PID ", 4) == 0) {
+#if !defined(ARDUINO_ARCH_ESP32)
+    Telemetry.println(F("ERROR,CONTROL_ESP32_REQUIRED")); return;
+#endif
+    if (FlightControl.active || controlArmed || !Motors.idle()) { Telemetry.println(F("ERROR,CONTROL_STOP_FIRST")); return; }
+    char axis[8], extra; float kp,ki,kd;
+    if (sscanf(command, "PID SET %7s %f %f %f %c", axis, &kp, &ki, &kd, &extra) == 4 &&
+        (strcmp(axis,"ROLL")==0 || strcmp(axis,"PITCH")==0) &&
+        FlightControl.setGains(strcmp(axis,"ROLL")==0 ? 1 : 2, Flight::Gains{kp,ki,kd})) reportPID();
+    else Telemetry.println(F("ERROR,CONTROL_INVALID_GAINS"));
+    return;
+  }
+  if (strncmp(command, "CONTROL ", 8) == 0) {
+#if !defined(ARDUINO_ARCH_ESP32)
+    Telemetry.println(F("ERROR,CONTROL_ESP32_REQUIRED")); return;
+#endif
+    const char *text = command+8;
+    if (strcmp(text,"STOP")==0) { stopControl(); return; }
+    if (strcmp(text,"INFO")==0) { reportPID(); return; }
+    if (!sensorAvailable || !lastControlSample || micros()-lastControlSample > 20000UL) {
+      stopControl("CONTROL_SENSOR_NOT_READY"); return;
+    }
+    if (strcmp(text,"ARM")==0) {
+      stopControl();
+      controlArmed = Motors.armControl(wifi);
+      if (!controlArmed) { Telemetry.println(F("ERROR,CONTROL_ARM_FAILED")); return; }
+      controlArmedAt = millis(); controlOwnerWifi = wifi;
+      Telemetry.println(F("STATUS,CONTROL_ARMED")); return;
+    }
+    if (strcmp(text,"ZERO")==0 && !FlightControl.active && !controlArmed && Motors.idle() &&
+        fabsf(FlightControl.roll+FlightControl.zeroRoll)<=10 && fabsf(FlightControl.pitch+FlightControl.zeroPitch)<=10) {
+      FlightControl.zeroRoll += FlightControl.roll; FlightControl.zeroPitch += FlightControl.pitch;
+      Telemetry.println(F("STATUS,CONTROL_ZEROED")); return;
+    }
+    float a,b; int axis; char extra;
+    if (sscanf(text,"SETPOINT %f %f %c",&a,&b,&extra)==2 && !FlightControl.active && !controlArmed && Motors.idle() &&
+        isfinite(a) && isfinite(b) && fabsf(a)<=10 && fabsf(b)<=10) {
+      FlightControl.rollTarget=a; FlightControl.pitchTarget=b;
+      Telemetry.println(F("STATUS,CONTROL_SETPOINT_OK")); return;
+    }
+    if (sscanf(text,"START %f %d %c",&a,&axis,&extra)==2 && controlArmed && controlOwnerWifi==wifi &&
+        millis()-controlArmedAt<15000 && FlightControl.start(a,axis)) {
+      if (Motors.startControl(wifi)) {
+        controlArmed=false; Telemetry.println(F("STATUS,CONTROL_RUNNING")); return;
+      }
+    }
+    stopControl("CONTROL_INVALID_OR_NOT_ARMED"); return;
+  }
   if (strncmp(command, "MOTOR ", 6) == 0) {
+    if (strcmp(command+6,"STOP")==0) { stopControl(); return; }
+    if ((FlightControl.active || controlArmed) && strcmp(command+6,"KEEPALIVE")!=0) {
+      Telemetry.println(F("ERROR,CONTROL_STOP_FIRST")); return;
+    }
     Motors.command(command + 6, wifi, Telemetry);
     return;
   }
   if (strcmp(command, "CAL") == 0) {
-    Motors.stop();
+    stopControl();
     if (!sensorAvailable && !initializeSensor()) {
       Telemetry.print(F("ERROR,"));
       Telemetry.println(initializationError);
@@ -449,6 +532,7 @@ void handleCommand(const char *command, bool wifi) {
     consecutiveReadFailures = 0;
     retrySensorAt = millis() + 1000;
   } else if (strcmp(command, "INFO") == 0) {
+    reportPID();
     Motors.report(Telemetry);
     Telemetry.reportWifiInfo();
     reportSensorInfo();
@@ -470,7 +554,7 @@ void processCommands(Stream &input, CommandBuffer &buffer, bool wifi = false) {
       buffer.discard = false;
     } else if (!buffer.discard) {
       if (buffer.length < sizeof(buffer.bytes) - 1) buffer.bytes[buffer.length++] = character;
-      else { buffer.length = 0; buffer.discard = true; Motors.stop(); }
+      else { buffer.length = 0; buffer.discard = true; stopControl("CONTROL_COMMAND_OVERFLOW"); }
     }
   }
 }
@@ -480,6 +564,9 @@ void setup() {
     pinMode(Config::LedPin, OUTPUT);
   }
   setStatusLed(false);
+#if defined(ARDUINO_ARCH_ESP32)
+  Serial.setTxBufferSize(1024);
+#endif
   Serial.begin(Config::BaudRate);
   beginSensorBus();
   Motors.begin();
@@ -489,6 +576,7 @@ void setup() {
   Telemetry.print(F("HELLO,1,"));
   Telemetry.println(Config::SampleRateHz);
   Motors.report(Telemetry);
+  reportPID();
   sensorAvailable = initializeSensor();
   if (!sensorAvailable) {
     Telemetry.print(F("ERROR,"));
@@ -501,6 +589,8 @@ void setup() {
 }
 
 void loop() {
+  if (FlightControl.active && !Motors.controlled()) stopControl("CONTROL_OUTPUT_STOPPED");
+  if (controlArmed && millis()-controlArmedAt>=15000) stopControl("CONTROL_ARM_EXPIRED");
   Motors.poll(Telemetry,
 #if defined(ARDUINO_ARCH_ESP32)
       Telemetry.clientStream().connected()
@@ -515,8 +605,9 @@ void loop() {
     Telemetry.print(F("HELLO,1,"));
     Telemetry.println(Config::SampleRateHz);
     reportSensorInfo();
-    Motors.stop();
+    stopControl();
     Motors.report(Telemetry);
+    reportPID();
     Telemetry.println(sensorAvailable ? F("STATUS,READY") : F("ERROR,SENSOR_NOT_READY_SEND_CAL"));
   }
   processCommands(Serial, serialCommands);
@@ -555,7 +646,7 @@ void loop() {
 
   RawSample sample;
   if (!readRawSample(sample)) {
-    Motors.stop();
+    stopControl("CONTROL_IMU_FAULT");
     motionCompensation.reset();
     if (++consecutiveReadFailures >= 3) {
       Telemetry.println(F("ERROR,MPU_READ_RECOVERING"));
@@ -569,6 +660,7 @@ void loop() {
   float dt = static_cast<uint32_t>(now - previousUpdateMicros) / 1000000.0f;
   previousUpdateMicros = now;
   if (dt < 0.001f || dt > 0.05f) {
+    if (FlightControl.active) stopControl("CONTROL_TIMING_FAULT");
     motionCompensation.reset();
     dt = 1.0f / Config::SampleRateHz;
   }
@@ -579,7 +671,7 @@ void loop() {
   float bx = gyroBiasX / Config::GyroScale;
   float by = gyroBiasY / Config::GyroScale;
   float bz = gyroBiasZ / Config::GyroScale;
-  motionCompensation.update(ax, ay, az,
+  if (!FlightControl.active && !controlArmed) motionCompensation.update(ax, ay, az,
       sample.gx / Config::GyroScale - bx,
       sample.gy / Config::GyroScale - by,
       sample.gz / Config::GyroScale - bz, dt, bx, by, bz);
@@ -591,5 +683,32 @@ void loop() {
   const float gz = ((sample.gz - gyroBiasZ) / Config::GyroScale) * Config::DegreesToRadians;
 
   updateMadgwick(gx, gy, gz, ax, ay, az, dt);
+#if defined(ARDUINO_ARCH_ESP32)
+  FlightControl.attitude(qW,qX,qY,qZ,gx,gy);
+  lastControlSample = now;
+  if (FlightControl.active) {
+    if (!FlightControl.update(dt)) stopControl(FlightControl.fault);
+    else if (!Motors.writeControl(FlightControl.duties)) stopControl("CONTROL_PWM_OR_WATCHDOG_FAULT");
+  }
+  // Keep transport work below the 200 Hz control rate.
+  static bool sendPose = false;
+  sendPose = !sendPose;
+  if (sendPose) sendQuaternion(now);
+  if (now % 100000UL < Config::SamplePeriodMicros) {
+    Telemetry.print(F("C,")); Telemetry.print(now); Telemetry.print(',');
+    Telemetry.print(FlightControl.roll,3); Telemetry.print(','); Telemetry.print(FlightControl.pitch,3);
+    Telemetry.print(','); Telemetry.print(FlightControl.rollRate,3); Telemetry.print(','); Telemetry.print(FlightControl.pitchRate,3);
+    Telemetry.print(','); Telemetry.print(FlightControl.rollTarget,3); Telemetry.print(','); Telemetry.print(FlightControl.pitchTarget,3);
+    Flight::PID *pids[] = {&FlightControl.rollPID,&FlightControl.pitchPID};
+    for (auto pid : pids) {
+      Telemetry.print(','); Telemetry.print(pid->p,3); Telemetry.print(','); Telemetry.print(pid->i,3);
+      Telemetry.print(','); Telemetry.print(pid->d,3);
+    }
+    for (unsigned duty : FlightControl.duties) { Telemetry.print(','); Telemetry.print(duty); }
+    Telemetry.print(','); Telemetry.print(FlightControl.saturated ? 1 : 0);
+    Telemetry.print(','); Telemetry.println(FlightControl.active ? 1 : 0);
+  }
+#else
   sendQuaternion(now);
+#endif
 }

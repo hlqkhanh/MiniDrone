@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
 using System.Diagnostics;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -47,6 +49,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private string _telemetryStatus = "No orientation data";
     private string _motorStatus = "Requires updated ESP32 firmware";
     private int _motorRequestVersion;
+    private bool _controlAvailable, _controlRunning, _controlArmed, _rigConfirmed, _stopPending;
+    private string _rollKp = "0", _rollKi = "0", _rollKd = "0";
+    private string _pitchKp = "0", _pitchKi = "0", _pitchKd = "0";
+    private string _baseDuty = "40", _rollTarget = "0", _pitchTarget = "0";
+    private string _controlStatus = "Requires CONTROL_V1 firmware", _controlData = "No control data";
+    private string _appliedPid = "Board gains not received", _controlAxis = "ROLL";
+    private StreamWriter? _controlLog;
+    private string _logStatus = "CSV logging off";
 
     public MainViewModel()
     {
@@ -65,7 +75,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         CalibrateCommand = new AsyncRelayCommand(CalibrateAsync, () => IsConnected, ShowError);
         ZeroCommand = new RelayCommand(ZeroOrientation, () => HasOrientation);
         RunMotorCommand = new AsyncRelayCommand(RunMotorAsync,
-            () => IsConnected && _motorsAvailable && _advancedMotors && PropellersRemoved && TryMotorSettings(out _), ShowError);
+            () => IsConnected && !_stopPending && !_controlBusy && !_controlRunning && !_controlArmed && _motorsAvailable && _advancedMotors && PropellersRemoved && TryMotorSettings(out _), ShowError);
         StopMotorsCommand = new AsyncRelayCommand(StopMotorsAsync,
             () => IsConnected, ShowError);
         CopyMotorPwmCommand = new RelayCommand(() =>
@@ -73,6 +83,20 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             MotorLF = MotorRF = MotorLR = MotorRR = MotorPercent;
             SelectedMotor = "CUSTOM";
         });
+        ApplyPidCommand = new AsyncRelayCommand(ApplyPidAsync,
+            () => ControlEditable && TryPids(out _, out _), ShowError);
+        ArmControlCommand = new AsyncRelayCommand(ArmControlAsync,
+            () => ControlEditable && RigConfirmed && SelectedGainsReady() && ValidControlInputs(out _, out _, out _), ShowError);
+        StartControlCommand = new AsyncRelayCommand(StartControlAsync,
+            () => IsConnected && !_stopPending && !_controlBusy && _controlArmed && RigConfirmed && ValidControlInputs(out _, out _, out _), ShowError);
+        ZeroControlCommand = new AsyncRelayCommand(async () =>
+        {
+            if (!ControlEditable) return;
+            SetControlBusy(true);
+            try { await RequestControlAsync("CONTROL ZERO", m => m is StatusMessage s && s.Status == "CONTROL_ZEROED"); }
+            finally { SetControlBusy(false); }
+        }, () => ControlEditable, ShowError);
+        ToggleControlLogCommand = new RelayCommand(ToggleControlLog);
         _motorHeartbeat = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _motorHeartbeat.Tick += MotorHeartbeatOnTick;
         _motorHeartbeat.Start();
@@ -180,6 +204,136 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ICommand RunMotorCommand { get; }
     public ICommand StopMotorsCommand { get; }
     public ICommand CopyMotorPwmCommand { get; }
+    public ICommand ApplyPidCommand { get; }
+    public ICommand ArmControlCommand { get; }
+    public ICommand StartControlCommand { get; }
+    public ICommand ZeroControlCommand { get; }
+    public ICommand ToggleControlLogCommand { get; }
+    public bool ControlEditable => IsConnected && _controlAvailable && !_stopPending && !_controlBusy && !_controlRunning && !_controlArmed && !_motorRunning;
+    public bool RigConfirmed
+    {
+        get => _rigConfirmed; set
+        {
+            if (SetProperty(ref _rigConfirmed, value))
+            {
+                if (!value && (_controlRunning || _controlArmed)) StopMotorsCommand.Execute(null);
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
+    public string RollKp { get => _rollKp; set { SetProperty(ref _rollKp, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string RollKi { get => _rollKi; set { SetProperty(ref _rollKi, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string RollKd { get => _rollKd; set { SetProperty(ref _rollKd, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string PitchKp { get => _pitchKp; set { SetProperty(ref _pitchKp, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string PitchKi { get => _pitchKi; set { SetProperty(ref _pitchKi, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string PitchKd { get => _pitchKd; set { SetProperty(ref _pitchKd, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string BaseDuty { get => _baseDuty; set { SetProperty(ref _baseDuty, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string RollTarget { get => _rollTarget; set { SetProperty(ref _rollTarget, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string PitchTarget { get => _pitchTarget; set { SetProperty(ref _pitchTarget, value); CommandManager.InvalidateRequerySuggested(); } }
+    public IReadOnlyList<string> ControlAxes { get; } = ["ROLL", "PITCH", "BOTH"];
+    public string ControlAxis { get => _controlAxis; set { SetProperty(ref _controlAxis, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string ControlStatus { get => _controlStatus; private set => SetProperty(ref _controlStatus, value); }
+    public string ControlData { get => _controlData; private set => SetProperty(ref _controlData, value); }
+    public string AppliedPid { get => _appliedPid; private set => SetProperty(ref _appliedPid, value); }
+    public string LogStatus { get => _logStatus; private set => SetProperty(ref _logStatus, value); }
+    private readonly Dictionary<string, PidSettings> _boardPids = new();
+    private bool _controlBusy;
+    private TaskCompletionSource<ProtocolMessage>? _controlReply;
+    private Func<ProtocolMessage, bool>? _controlReplyMatches;
+    private async Task RequestControlAsync(string command, Func<ProtocolMessage, bool> matches)
+    {
+        var reply = new TaskCompletionSource<ProtocolMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _controlReply = reply; _controlReplyMatches = matches;
+        try
+        {
+            await SendCommandAsync(command);
+            await reply.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            try { if (IsConnected) await StopMotorsAsync(); } catch { /* Firmware watchdog remains active. */ }
+            throw;
+        }
+        finally { if (_controlReply == reply) { _controlReply = null; _controlReplyMatches = null; } }
+    }
+    private void SetControlBusy(bool busy)
+    {
+        _controlBusy = busy; OnPropertyChanged(nameof(ControlEditable)); CommandManager.InvalidateRequerySuggested();
+    }
+    private bool TryPids(out PidSettings? roll, out PidSettings? pitch)
+    {
+        var r = PidSettings.TryCreate("ROLL", RollKp, RollKi, RollKd, out roll);
+        var p = PidSettings.TryCreate("PITCH", PitchKp, PitchKi, PitchKd, out pitch);
+        return r && p;
+    }
+    private bool SelectedGainsReady() =>
+        (ControlAxis == "PITCH" || _boardPids.TryGetValue("ROLL", out var roll) && roll.Kp > 0) &&
+        (ControlAxis == "ROLL" || _boardPids.TryGetValue("PITCH", out var pitch) && pitch.Kp > 0);
+    private bool ValidControlInputs(out double duty, out double roll, out double pitch)
+    {
+        var a = double.TryParse(BaseDuty, NumberStyles.Float, CultureInfo.InvariantCulture, out duty);
+        var b = double.TryParse(RollTarget, NumberStyles.Float, CultureInfo.InvariantCulture, out roll);
+        var c = double.TryParse(PitchTarget, NumberStyles.Float, CultureInfo.InvariantCulture, out pitch);
+        return a && b && c && double.IsFinite(duty) && duty is >= 1 and <= 180 &&
+            double.IsFinite(roll) && Math.Abs(roll) <= 10 && double.IsFinite(pitch) && Math.Abs(pitch) <= 10;
+    }
+    private async Task ApplyPidAsync()
+    {
+        if (!ControlEditable || !TryPids(out var roll, out var pitch)) return;
+        var version = ++_motorRequestVersion;
+        SetControlBusy(true);
+        try
+        {
+            ControlStatus = "Sending gains; waiting for board acknowledgement";
+            await RequestControlAsync(roll!.Command, m => m is PidMessage p && SameGains(p.Settings, roll));
+            if (version == _motorRequestVersion && IsConnected)
+                await RequestControlAsync(pitch!.Command, m => m is PidMessage p && SameGains(p.Settings, pitch));
+        }
+        finally { SetControlBusy(false); }
+    }
+    private static bool SameGains(PidSettings actual, PidSettings expected) => actual.Axis == expected.Axis &&
+        Math.Abs(actual.Kp - expected.Kp) <= 0.000001 && Math.Abs(actual.Ki - expected.Ki) <= 0.000001 && Math.Abs(actual.Kd - expected.Kd) <= 0.000001;
+    private async Task StartControlAsync()
+    {
+        if (!IsConnected || _stopPending || _controlBusy || !_controlArmed || !RigConfirmed || !ValidControlInputs(out var duty, out _, out _)) return;
+        SetControlBusy(true);
+        try
+        {
+            await RequestControlAsync(FormattableString.Invariant($"CONTROL START {duty:G9} {(ControlAxis == "ROLL" ? 1 : ControlAxis == "PITCH" ? 2 : 0)}"),
+                m => m is StatusMessage s && s.Status == "CONTROL_RUNNING");
+        }
+        finally { SetControlBusy(false); }
+    }
+    private async Task ArmControlAsync()
+    {
+        if (!ControlEditable || !RigConfirmed || !SelectedGainsReady() || !ValidControlInputs(out _, out var roll, out var pitch)) return;
+        var version = ++_motorRequestVersion;
+        SetControlBusy(true);
+        try
+        {
+            await RequestControlAsync(FormattableString.Invariant($"CONTROL SETPOINT {roll:G9} {pitch:G9}"),
+                m => m is StatusMessage s && s.Status == "CONTROL_SETPOINT_OK");
+            if (version != _motorRequestVersion || !IsConnected || !RigConfirmed) return;
+            await RequestControlAsync("CONTROL ARM", m => m is StatusMessage s && s.Status == "CONTROL_ARMED");
+        }
+        finally { SetControlBusy(false); }
+    }
+    private void ToggleControlLog()
+    {
+        if (_controlLog is not null) { _controlLog.Dispose(); _controlLog = null; LogStatus = "CSV logging off"; return; }
+        try
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DroneMotionLogs");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, $"pid-{DateTime.Now:yyyyMMdd-HHmmss-fff}.csv");
+            _controlLog = new StreamWriter(path) { AutoFlush = true };
+            _controlLog.WriteLine("micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active,rollKp,rollKi,rollKd,pitchKp,pitchKi,pitchKd");
+            LogStatus = path;
+        }
+        catch (Exception e) { ShowError(e); }
+    }
+    private string CsvGains(string axis) => _boardPids.TryGetValue(axis, out var g)
+        ? FormattableString.Invariant($"{g.Kp:G9},{g.Ki:G9},{g.Kd:G9}") : ",,";
     public IReadOnlyList<string> MotorTargets { get; } = ["LF", "RF", "LR", "RR", "ALL", "CUSTOM"];
     public string SelectedMotor
     {
@@ -239,31 +393,36 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task RunMotorAsync()
     {
         // Validate again at execution; each click arms exactly one bounded test.
-        if (!IsConnected || !_motorsAvailable || !_advancedMotors || !PropellersRemoved ||
+        if (!IsConnected || _stopPending || _controlBusy || _controlRunning || _controlArmed || !_motorsAvailable || !_advancedMotors || !PropellersRemoved ||
             !TryMotorSettings(out var settings)) return;
         var command = settings!.Command;
         var version = ++_motorRequestVersion;
         MotorStatus = "Requesting motor test...";
         await SendCommandAsync("MOTOR ARM");
-        if (version != _motorRequestVersion || !IsConnected || !PropellersRemoved) return;
+        if (version != _motorRequestVersion || !IsConnected || !PropellersRemoved || _controlArmed || _controlRunning) return;
         await SendCommandAsync(command);
     }
 
     private Task StopMotorsAsync()
     {
+        _stopPending = true;
+        _controlReply?.TrySetCanceled();
         ++_motorRequestVersion;
         _motorRunning = false;
+        _controlRunning = _controlArmed = false;
+        OnPropertyChanged(nameof(ControlEditable));
         return SendCommandAsync("MOTOR STOP");
     }
 
     private async void MotorHeartbeatOnTick(object? sender, EventArgs e)
     {
-        if (!IsConnected || !_motorRunning || _heartbeatBusy) return;
+        if (!IsConnected || (!_motorRunning && !_controlRunning) || _heartbeatBusy) return;
         _heartbeatBusy = true;
         try { await SendCommandAsync("MOTOR KEEPALIVE"); }
         catch (Exception exception)
         {
             _motorRunning = false;
+            _controlRunning = _controlArmed = false;
             MotorStatus = $"Heartbeat failed; board will stop: {exception.Message}";
         }
         finally { _heartbeatBusy = false; }
@@ -271,6 +430,11 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void ResetMotorControls()
     {
+        _stopPending = false;
+        _controlAvailable = _controlRunning = _controlArmed = false;
+        _boardPids.Clear(); AppliedPid = "Board gains not received";
+        RigConfirmed = false; ControlStatus = "Requires CONTROL_V1 firmware";
+        OnPropertyChanged(nameof(ControlEditable));
         _motorsAvailable = false;
         _advancedMotors = _motorRunning = false;
         ++_motorRequestVersion;
@@ -402,6 +566,45 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
         PostToUi(() =>
         {
+            if (message is HelloMessage)
+            {
+                _controlReply?.TrySetException(new IOException("Firmware restarted or a new session began"));
+                ResetMotorControls();
+            }
+            if (message is ErrorMessage errorReply && errorReply.Code.StartsWith("CONTROL_", StringComparison.Ordinal))
+                _controlReply?.TrySetException(new InvalidOperationException(errorReply.Code));
+            else if (_controlReplyMatches?.Invoke(message) == true) _controlReply?.TrySetResult(message);
+            if (message is PidMessage pid)
+            {
+                _boardPids[pid.Settings.Axis] = pid.Settings;
+                AppliedPid = string.Join(" | ", _boardPids.Values.Select(g => FormattableString.Invariant($"{g.Axis}: P={g.Kp:G6} I={g.Ki:G6} D={g.Kd:G6}")));
+                ControlStatus = "Board gains acknowledged (RAM; reset restores defaults)";
+                CommandManager.InvalidateRequerySuggested();
+                return;
+            }
+            if (message is ControlTelemetryMessage control)
+            {
+                var v = control.Values;
+                ControlData = FormattableString.Invariant($"FW angle R {v[1]:F2}° P {v[2]:F2}° | rate {v[3]:F1}/{v[4]:F1}°/s\nTarget {v[5]:F1}/{v[6]:F1}°\nRoll P/I/D {v[7]:F2}/{v[8]:F2}/{v[9]:F2}\nPitch P/I/D {v[10]:F2}/{v[11]:F2}/{v[12]:F2}\nPWM {v[13]}/{v[14]}/{v[15]}/{v[16]} | saturation {v[17]}");
+                try { _controlLog?.WriteLine($"{control.Csv},{CsvGains("ROLL")},{CsvGains("PITCH")}"); } catch (Exception e) { _controlLog?.Dispose(); _controlLog = null; LogStatus = e.Message; }
+                return;
+            }
+            if (message is StatusMessage cs && cs.Status.StartsWith("CONTROL_", StringComparison.Ordinal))
+            {
+                if (cs.Status == "CONTROL_STOPPED") _stopPending = false;
+                if (cs.Status == "CONTROL_V1") _controlAvailable = true;
+                else if (cs.Status == "CONTROL_RUNNING") { _controlRunning = true; _controlArmed = false; }
+                else if (cs.Status == "CONTROL_ARMED") _controlArmed = true;
+                else if (cs.Status is not ("CONTROL_ZEROED" or "CONTROL_SETPOINT_OK")) _controlRunning = _controlArmed = false;
+                ControlStatus = cs.Status;
+                OnPropertyChanged(nameof(ControlEditable)); CommandManager.InvalidateRequerySuggested(); return;
+            }
+            if (message is ErrorMessage ce && ce.Code.StartsWith("CONTROL_", StringComparison.Ordinal))
+            {
+                if (ce.Code == "CONTROL_ARM_FAILED") _controlArmed = false;
+                ControlStatus = ce.Code;
+                CommandManager.InvalidateRequerySuggested(); return;
+            }
             if (message is StatusMessage motor && motor.Status.StartsWith("MOTOR_", StringComparison.Ordinal))
             {
                 MotorStatus = motor.Status switch
@@ -419,6 +622,8 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 if (motor.Status == "MOTOR_ADVANCED_V2") _advancedMotors = true;
                 if (motor.Status == "MOTOR_RUNNING") _motorRunning = true;
                 if (motor.Status is "MOTOR_STOPPED" or "MOTOR_UNAVAILABLE" or "MOTOR_ARMED") _motorRunning = false;
+                if (motor.Status is "MOTOR_STOPPED" or "MOTOR_UNAVAILABLE") { _controlRunning = _controlArmed = false; _stopPending = false; }
+                OnPropertyChanged(nameof(ControlEditable));
                 CommandManager.InvalidateRequerySuggested();
                 return;
             }
@@ -448,6 +653,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     {
         PostToUi(() =>
         {
+            _controlReply?.TrySetException(new IOException(reason));
             IsConnected = false;
             ResetMotorControls();
             ConnectionStatus = "Disconnected";
@@ -457,6 +663,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void ShowError(Exception exception)
     {
+        if (exception is OperationCanceledException) return;
         ConnectionStatus = IsConnected ? ConnectionStatus : "Disconnected";
         DeviceStatus = exception.Message;
     }
@@ -473,6 +680,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _controlLog?.Dispose(); _controlLog = null;
         _motorHeartbeat.Stop();
         _motorHeartbeat.Tick -= MotorHeartbeatOnTick;
         try { if (IsConnected) await StopMotorsAsync(); }

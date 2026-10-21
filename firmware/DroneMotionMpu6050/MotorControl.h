@@ -26,6 +26,47 @@ class MotorControl {
     stopLocked();
     xSemaphoreGive(mutex_);
   }
+  bool controlled() {
+    if (!mutex_) return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    bool value = closedLoop_ && running_;
+    xSemaphoreGive(mutex_); return value;
+  }
+  bool idle() {
+    if (!mutex_) return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    bool value = !running_ && !armed_;
+    xSemaphoreGive(mutex_); return value;
+  }
+  bool armControl(bool wifi) {
+    if (!mutex_) return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    stopLocked();
+    bool ok = ready_ && attachLocked();
+    if (ok) { stoppedPending_=false; armed_=true; ownerWifi_=wifi; armedAt_=esp_timer_get_time(); }
+    xSemaphoreGive(mutex_); return ok;
+  }
+  bool startControl(bool wifi) {
+    if (!mutex_) return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    const int64_t now = esp_timer_get_time();
+    bool ok = ready_ && armed_ && !running_ && ownerWifi_ == wifi && now-armedAt_ < 15000000LL;
+    if (ok) {
+      armed_ = false; running_ = closedLoop_ = true;
+      heartbeatAt_ = controlAt_ = now; deadline_ = 0;
+    }
+    xSemaphoreGive(mutex_); return ok;
+  }
+  bool writeControl(const unsigned duties[4]) {
+    if (!mutex_) return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    bool ok = running_ && closedLoop_;
+    if (ok) {
+      for (int n=0;n<4;n++) if (duties[n] > 220 || !ledcWrite(pins_[n], duties[n])) ok = false;
+      if (ok) controlAt_ = esp_timer_get_time(); else { ready_=false; stopLocked(); }
+    }
+    xSemaphoreGive(mutex_); return ok;
+  }
   void report(Print &out) {
     bool ready = false;
     if (mutex_) {
@@ -85,6 +126,8 @@ class MotorControl {
   bool attached_[4] = {};
   bool ready_ = false, armed_ = false, running_ = false;
   bool ownerWifi_ = false, stoppedPending_ = false;
+  bool closedLoop_ = false;
+  int64_t controlAt_ = 0;
   int64_t armedAt_ = 0, heartbeatAt_ = 0, deadline_ = 0;
   SemaphoreHandle_t mutex_ = nullptr;
   esp_timer_handle_t timer_ = nullptr;
@@ -135,14 +178,14 @@ class MotorControl {
       if (!attached_[i]) { digitalWrite(pins_[i], LOW); pinMode(pins_[i], OUTPUT); }
     }
     if (running_ || armed_) stoppedPending_ = true;
-    running_ = armed_ = false;
+    running_ = armed_ = closedLoop_ = false;
   }
   static void supervise(void *arg) {
     auto *self = static_cast<MotorControl *>(arg);
     xSemaphoreTake(self->mutex_, portMAX_DELAY);
     const int64_t now = esp_timer_get_time();
     if ((self->armed_ && now - self->armedAt_ >= 15000000LL) ||
-        (self->running_ && (now - self->heartbeatAt_ >= 2000000LL ||
+        (self->running_ && ((self->closedLoop_ && now-self->controlAt_ >= 100000LL) || now - self->heartbeatAt_ >= 2000000LL ||
           (self->deadline_ && now >= self->deadline_)))) self->stopLocked();
     xSemaphoreGive(self->mutex_);
   }
@@ -150,6 +193,11 @@ class MotorControl {
 #else
 class MotorControl {
  public:
+  bool controlled() { return false; }
+  bool idle() { return true; }
+  bool armControl(bool) { return false; }
+  bool startControl(bool) { return false; }
+  bool writeControl(const unsigned *) { return false; }
   void begin() {}
   void stop() {}
   void report(Print &out) { out.println(F("STATUS,MOTOR_UNAVAILABLE")); }

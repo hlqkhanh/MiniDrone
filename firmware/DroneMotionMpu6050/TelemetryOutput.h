@@ -22,7 +22,12 @@ class TelemetryOutput : public Print {
     else overflow_ = true;
     if (byte == '\n') {
       if (!overflow_) {
+#if defined(ARDUINO_ARCH_ESP32)
+        // USB congestion must never stall the control loop. Drop whole lines.
+        if (Serial.availableForWrite() >= static_cast<int>(used_)) Serial.write(line_, used_);
+#else
         Serial.write(line_, used_);
+#endif
 #if defined(ARDUINO_ARCH_ESP32)
         if (client_.connected()) {
           tx_.append(line_, used_, millis());
@@ -70,7 +75,7 @@ class TelemetryOutput : public Print {
 #endif
 
  private:
-  uint8_t line_[192];
+  uint8_t line_[320];
   size_t used_ = 0;
   bool overflow_ = false;
 #if defined(ARDUINO_ARCH_ESP32)

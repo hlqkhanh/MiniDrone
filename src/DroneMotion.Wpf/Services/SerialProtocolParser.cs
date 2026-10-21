@@ -67,6 +67,17 @@ public sealed class SerialProtocolParser
         var fields = line.Split(',', StringSplitOptions.TrimEntries);
         switch (fields[0])
         {
+            case "PID" when fields.Length == 5 &&
+                PidSettings.TryCreate(fields[1], fields[2], fields[3], fields[4], out var settings):
+                message = new PidMessage(settings!);
+                return true;
+            case "C" when fields.Length == 20:
+                var values = new double[19];
+                for (var n = 0; n < values.Length; n++)
+                    if (!double.TryParse(fields[n + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out values[n]) ||
+                        !double.IsFinite(values[n])) return false;
+                message = new ControlTelemetryMessage(string.Join(',', fields.Skip(1)), values);
+                return true;
             case "MOTOR_TEST":
                 message = new ErrorMessage("WRONG_FIRMWARE_MOTOR_TEST_USE_MAIN_SKETCH");
                 return true;

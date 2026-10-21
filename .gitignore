@@ -4,6 +4,7 @@ obj/
 *.user
 *.suo
 .tools/
+.packages/
 firmware/DroneMotionMpu6050/WifiConfig.local.h
 
 # Large files & installers (>100MB)

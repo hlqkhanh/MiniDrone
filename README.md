@@ -1,10 +1,12 @@
 # MPU6050 3D Motion Viewer
 
+**Cân bằng PID trên đế giữ drone (ESP32):** xem [hướng dẫn PID và chỉnh gain trên WPF](doc/vi/pid-can-bang-tren-de.md). Có chỉnh Kp/Ki/Kd riêng roll/pitch, Arm/Start/Stop, telemetry và CSV. Gain mặc định bằng 0; cần xác minh mapping và chỉnh trên đế trước khi dùng.
+
 **Cấu hình Wi-Fi trên trình duyệt:** [cách nạp và kết nối Wi-Fi](firmware/WIFI.md). Nối vào `DroneMotion_Setup-XXXX` (mật khẩu `drone12345`), mở `http://192.168.4.1` để chọn mạng. Sau đó laptop trở về cùng LAN với ESP32, app dùng IP trên trang và port `3333`.
 
 **Dùng ESP32 XW_Z1_V2.0:** xem [hướng dẫn nạp và kết nối ESP32](firmware/ESP32.md). Sketch dùng SPI (SCK18/MOSI23/MISO19/CS5), nhận dạng MPU6500 hoặc MPU9250 qua WHO_AM_I. Các bước Nano/I2C bên dưới dành cho Arduino Nano.
 
-Ứng dụng hiển thị hướng cảm biến trong không gian 3D. Arduino Nano + MPU6050 (I2C) hoặc ESP32 + MPU6500/MPU9250 (SPI) tính quaternion ở 100 Hz và gửi qua USB serial; ứng dụng WPF chỉ giữ mẫu mới nhất và cập nhật viewport theo nhịp render.
+Ứng dụng hiển thị hướng cảm biến trong không gian 3D. Arduino Nano + MPU6050 (I2C) tính quaternion ở 100 Hz; ESP32 + MPU6500/MPU9250 (SPI) lấy mẫu và điều khiển ở 200 Hz, gửi quaternion 100 Hz qua USB/Wi-Fi. Ứng dụng WPF chỉ giữ mẫu mới nhất và cập nhật viewport theo nhịp render.
 
 > Firmware chỉ dùng gia tốc/gyro, chưa dùng từ kế kể cả khi phát hiện MPU9250. Roll/pitch được hiệu chỉnh theo trọng lực, còn yaw là tương đối và sẽ trôi dần. Nút **Zero orientation** đặt tư thế hiện tại làm mốc mới nhưng không loại bỏ yaw drift.
 

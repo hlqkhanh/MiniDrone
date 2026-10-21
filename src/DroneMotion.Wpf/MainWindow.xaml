@@ -162,6 +162,45 @@
                             <TextBlock Text="{Binding MotorStatus}" TextWrapping="Wrap" Foreground="#67E8F9"/>
                         </StackPanel>
                     </Border>
+                    <TextBlock Text="BALANCE ON TEST RIG" FontWeight="Bold" Margin="0,16,0,8"/>
+                    <TextBlock Text="Rate PID: Kp 0–5, Ki 0–2, Kd 0–0.2. Use decimal point. Gains apply only while stopped. Default gains are zero; tune on rig." TextWrapping="Wrap" Foreground="#94A3B8"/>
+                    <StackPanel IsEnabled="{Binding ControlEditable}" Margin="0,8,0,0">
+                        <TextBlock Text="Roll Kp / Ki / Kd"/>
+                        <UniformGrid Columns="3">
+                            <TextBox Text="{Binding RollKp, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                            <TextBox Text="{Binding RollKi, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                            <TextBox Text="{Binding RollKd, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                        </UniformGrid>
+                        <TextBlock Text="Pitch Kp / Ki / Kd" Margin="0,6,0,0"/>
+                        <UniformGrid Columns="3">
+                            <TextBox Text="{Binding PitchKp, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                            <TextBox Text="{Binding PitchKi, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                            <TextBox Text="{Binding PitchKd, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                        </UniformGrid>
+                        <Button Content="Apply PID" Command="{Binding ApplyPidCommand}"/>
+                        <TextBlock Text="Base duty (1–180 of 255)"/>
+                        <TextBox Text="{Binding BaseDuty, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                        <TextBlock Text="Roll / pitch target ° (−10 to +10)"/>
+                        <UniformGrid Columns="2">
+                            <TextBox Text="{Binding RollTarget, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                            <TextBox Text="{Binding PitchTarget, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                        </UniformGrid>
+                        <ComboBox ItemsSource="{Binding ControlAxes}" SelectedItem="{Binding ControlAxis}"/>
+                        <Button Content="Set firmware level reference" Command="{Binding ZeroControlCommand}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding AppliedPid}" TextWrapping="Wrap" Margin="0,8,0,4"/>
+                    <CheckBox IsChecked="{Binding RigConfirmed}" Foreground="#E2E8F0">
+                        <TextBlock Text="Rig secured; motor mapping and correction direction verified" TextWrapping="Wrap"/>
+                    </CheckBox>
+                    <WrapPanel>
+                        <Button Content="Arm balance" Command="{Binding ArmControlCommand}"/>
+                        <Button Content="Start balance" Command="{Binding StartControlCommand}"/>
+                        <Button Content="STOP / DISARM" Command="{Binding StopMotorsCommand}" Background="#991B1B"/>
+                    </WrapPanel>
+                    <TextBlock Text="{Binding ControlStatus}" TextWrapping="Wrap" Foreground="#67E8F9"/>
+                    <TextBlock Text="{Binding ControlData}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,6"/>
+                    <Button Content="Start / stop CSV log" Command="{Binding ToggleControlLogCommand}"/>
+                    <TextBlock Text="{Binding LogStatus}" TextWrapping="Wrap" FontSize="11"/>
                     <TextBlock Text="PERFORMANCE" FontSize="11" Foreground="#94A3B8" Margin="0,5,0,7"/>
                     <TextBlock Text="{Binding SampleRate, StringFormat=Data: {0:F0} samples/s}"/>
                     <TextBlock Text="{Binding FramesPerSecond, StringFormat=Viewport: {0:F0} FPS}" Margin="0,3,0,0"/>

@@ -78,6 +78,22 @@ int main() {
   motors.command("KEEPALIVE", false, out);
   tick(1500000); stopped();
 
+  // Closed-loop PWM cannot restart after the supervisor has revoked its lease.
+  assert(motors.armControl(false));
+  assert(!motors.startControl(true));
+  assert(motors.startControl(false));
+  unsigned controlledDuties[4] = {50,60,50,60};
+  assert(motors.writeControl(controlledDuties));
+  tick(99000); assert(motors.controlled());
+  motors.command("KEEPALIVE",false,out);
+  tick(1000); stopped(); assert(!motors.controlled());
+  assert(!motors.writeControl(controlledDuties)); stopped();
+  assert(motors.armControl(false)); assert(motors.startControl(false));
+  for(int n=0;n<30;n++) { assert(motors.writeControl(controlledDuties)); tick(50000); }
+  // Sensor-loop updates do not replace the external heartbeat.
+  for(int n=0;n<10;n++) { assert(motors.writeControl(controlledDuties)); tick(50000); }
+  stopped(); assert(!motors.controlled());
+
   motors.command("ARM", false, out);
   MotorMock::writeOk = false;
   motors.command("ALL 20 1000", false, out); stopped();
