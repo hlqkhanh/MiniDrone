@@ -67,6 +67,13 @@ public sealed class SerialProtocolParser
         var fields = line.Split(',', StringSplitOptions.TrimEntries);
         switch (fields[0])
         {
+            case "CAL" when fields.Length == 4 &&
+                int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out var accepted) &&
+                int.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out var required) &&
+                required > 0 && accepted >= 0 && accepted <= required &&
+                fields[3] is "COLLECTING" or "MOTION" or "ACCEL_NOT_1G" or "GYRO_OUT_OF_RANGE" or "COMPLETE":
+                message = new CalibrationMessage(accepted, required, fields[3]);
+                return true;
             case "PID" when fields.Length == 5 &&
                 PidSettings.TryCreate(fields[1], fields[2], fields[3], fields[4], out var settings):
                 message = new PidMessage(settings!);

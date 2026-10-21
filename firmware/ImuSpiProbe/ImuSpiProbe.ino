@@ -11,13 +11,16 @@ constexpr int MosiPin = 23;
 constexpr int CsPin = 5;
 constexpr int MotorPins[] = {14, 15, 12, 13};
 
-uint8_t readIdentity() {
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+uint8_t readIdentity(uint32_t clockHz) {
+  SPI.beginTransaction(SPISettings(clockHz, MSBFIRST, SPI_MODE0));
   digitalWrite(CsPin, LOW);
+  delayMicroseconds(1);
   SPI.transfer(0x75 | 0x80);
   const uint8_t identity = SPI.transfer(0x00);
+  delayMicroseconds(1);
   digitalWrite(CsPin, HIGH);
   SPI.endTransaction();
+  delayMicroseconds(1);
   return identity;
 }
 
@@ -35,13 +38,25 @@ void setup() {
 }
 
 void loop() {
-  const uint8_t identity = readIdentity();
-  Serial.print("PROBE,WHO_AM_I,0x");
-  if (identity < 0x10) Serial.print('0');
-  Serial.print(identity, HEX);
-  if (identity == 0x70) Serial.println(",MPU6500");
-  else if (identity == 0x71) Serial.println(",MPU9250");
-  else if (identity == 0x00 || identity == 0xFF) Serial.println(",NO_RESPONSE");
-  else Serial.println(",UNSUPPORTED_ID");
-  delay(1000);
+  const uint32_t clocks[] = {100000, 250000, 1000000};
+  for (uint32_t clockHz : clocks) {
+    uint16_t found6500 = 0, found9250 = 0, zero = 0, ones = 0, other = 0;
+    uint8_t lastIdentity = 0;
+    for (int n = 0; n < 100; ++n) {
+      lastIdentity = readIdentity(clockHz);
+      if (lastIdentity == 0x70) ++found6500;
+      else if (lastIdentity == 0x71) ++found9250;
+      else if (lastIdentity == 0) ++zero;
+      else if (lastIdentity == 0xFF) ++ones;
+      else ++other;
+      delay(5);
+    }
+    Serial.print("PROBE,HZ,"); Serial.print(clockHz);
+    Serial.print(",MPU6500,"); Serial.print(found6500);
+    Serial.print(",MPU9250,"); Serial.print(found9250);
+    Serial.print(",ZERO,"); Serial.print(zero);
+    Serial.print(",FF,"); Serial.print(ones);
+    Serial.print(",OTHER,"); Serial.print(other);
+    Serial.print(",LAST,0x"); Serial.println(lastIdentity, HEX);
+  }
 }

@@ -23,6 +23,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private string _directHost = "192.168.4.1", _routerHost = "";
     private int _wifiPort = 3333;
     private readonly OrientationService _orientation = new();
+    private readonly SensorSession _sensorSession = new();
     private readonly SynchronizationContext _uiContext;
     private readonly Stopwatch _rateTimer = Stopwatch.StartNew();
     private string? _selectedPort;
@@ -74,10 +75,10 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 ? !string.IsNullOrWhiteSpace(WifiHost) && WifiPort is >= 1 and <= 65535
                 : !string.IsNullOrWhiteSpace(SelectedPort)), ShowError);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync, () => IsConnected, ShowError);
-        CalibrateCommand = new AsyncRelayCommand(CalibrateAsync, () => IsConnected, ShowError);
+        CalibrateCommand = new AsyncRelayCommand(CalibrateAsync, () => IsConnected && !_sensorSession.IsCalibrating, ShowError);
         ZeroCommand = new RelayCommand(ZeroOrientation, () => HasOrientation);
         RunMotorCommand = new AsyncRelayCommand(RunMotorAsync,
-            () => IsConnected && !_stopPending && !_controlBusy && !_controlRunning && !_controlArmed && _motorsAvailable && _advancedMotors && PropellersRemoved && TryMotorSettings(out _), ShowError);
+            () => IsConnected && !_sensorSession.IsCalibrating && !_stopPending && !_controlBusy && !_controlRunning && !_controlArmed && _motorsAvailable && _advancedMotors && PropellersRemoved && TryMotorSettings(out _), ShowError);
         StopMotorsCommand = new AsyncRelayCommand(StopMotorsAsync,
             () => IsConnected, ShowError);
         CopyMotorPwmCommand = new RelayCommand(() =>
@@ -88,7 +89,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         ApplyPidCommand = new AsyncRelayCommand(ApplyPidAsync,
             () => ControlEditable && TryPids(out _, out _), ShowError);
         ArmControlCommand = new AsyncRelayCommand(ArmControlAsync,
-            () => ControlEditable && RigConfirmed && SelectedGainsReady() && ValidControlInputs(out _, out _, out _), ShowError);
+            () => ControlEditable && !_sensorSession.IsCalibrating && RigConfirmed && SelectedGainsReady() && ValidControlInputs(out _, out _, out _), ShowError);
         StartControlCommand = new AsyncRelayCommand(StartControlAsync,
             () => IsConnected && !_stopPending && !_controlBusy && _controlArmed && RigConfirmed && ValidControlInputs(out _, out _, out _), ShowError);
         ZeroControlCommand = new AsyncRelayCommand(async () =>
@@ -324,7 +325,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     }
     private async Task ArmControlAsync()
     {
-        if (!ControlEditable || !RigConfirmed || !SelectedGainsReady() || !ValidControlInputs(out _, out var roll, out var pitch)) return;
+        if (!ControlEditable || _sensorSession.IsCalibrating || !RigConfirmed || !SelectedGainsReady() || !ValidControlInputs(out _, out var roll, out var pitch)) return;
         var version = ++_motorRequestVersion;
         SetControlBusy(true);
         try
@@ -411,7 +412,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task RunMotorAsync()
     {
         // Validate again at execution; each click arms exactly one bounded test.
-        if (!IsConnected || _stopPending || _controlBusy || _controlRunning || _controlArmed || !_motorsAvailable || !_advancedMotors || !PropellersRemoved ||
+        if (!IsConnected || _sensorSession.IsCalibrating || _stopPending || _controlBusy || _controlRunning || _controlArmed || !_motorsAvailable || !_advancedMotors || !PropellersRemoved ||
             !TryMotorSettings(out var settings)) return;
         var command = settings!.Command;
         var version = ++_motorRequestVersion;
@@ -465,9 +466,10 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var timestamp = Interlocked.Read(ref _lastOrientationTimestamp);
         TelemetryStatus = !IsConnected ? "Disconnected" : timestamp == 0
-            ? "No Q data — keep still for calibration; verify main firmware"
+            ? _sensorSession.Status
+            : _sensorSession.IsCalibrating ? _sensorSession.Status
             : Stopwatch.GetElapsedTime(timestamp).TotalSeconds > 2
-                ? "Orientation stream paused — check sensor/status; firmware will retry"
+                ? $"Orientation paused — {_sensorSession.Status}"
                 : "Receiving live orientation";
         _framesInWindow++;
         if (_orientation.TryGetDisplayOrientation(out NumericsQuaternion orientation, out var euler))
@@ -515,6 +517,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         {
             var endpoint = UseWifi ? $"{WifiHost}:{WifiPort}" : SelectedPort;
             ResetMotorControls();
+            _sensorSession.Reset();
             Interlocked.Exchange(ref _lastOrientationTimestamp, 0);
             _orientation.Reset();
             DisplayQuaternion = MediaQuaternion.Identity;
@@ -527,7 +530,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             IsConnected = UseWifi ? _tcp.IsConnected : _serial.IsConnected;
             ConnectionStatus = IsConnected ? $"Connected to {endpoint}" : "Disconnected";
             if (!IsConnected) return;
-            DeviceStatus = "Waiting for sensor data...";
+            DeviceStatus = _sensorSession.Status;
             if (!UseWifi) await Task.Delay(2000); // USB may reset the board.
             if (IsConnected) { await SendCommandAsync("PING"); await SendCommandAsync("INFO"); }
         }
@@ -554,8 +557,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task CalibrateAsync()
     {
         await StopMotorsAsync();
+        _sensorSession.Update(new StatusMessage("CALIBRATING"));
         await SendCommandAsync("CAL");
-        DeviceStatus = "Calibration requested — keep the sensor still";
+        DeviceStatus = _sensorSession.Status;
     }
 
     private void ZeroOrientation()
@@ -572,6 +576,12 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void OnMessageReceived(ProtocolMessage message)
     {
+        if (message is HelloMessage)
+        {
+            // Reset in receive order, before a Q in the same TCP/serial chunk.
+            _orientation.Reset();
+            Interlocked.Exchange(ref _lastOrientationTimestamp, 0);
+        }
         if (message is QuaternionMessage quaternion)
         {
             if (_orientation.Update(quaternion.Orientation))
@@ -588,7 +598,27 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 _controlReply?.TrySetException(new IOException("Firmware restarted or a new session began"));
                 ResetMotorControls();
+                _sensorSession.Reset();
+                HasOrientation = false;
             }
+            if (_sensorSession.Update(message))
+            {
+                DeviceStatus = _sensorSession.Status;
+                CommandManager.InvalidateRequerySuggested();
+                return;
+            }
+            // Router failures do not invalidate a working direct AP connection.
+            if (message is ErrorMessage wifiError && wifiError.Code.StartsWith("WIFI_", StringComparison.Ordinal))
+            {
+                if (UseWifi && WifiMode == WifiModes[0]) return;
+                DeviceStatus = $"Router Wi-Fi: {wifiError.Code}";
+                return;
+            }
+            if (message is StatusMessage sensorInfo &&
+                (sensorInfo.Status.StartsWith("SPI_", StringComparison.Ordinal) ||
+                 sensorInfo.Status.StartsWith("SENSOR_", StringComparison.Ordinal) ||
+                 sensorInfo.Status.StartsWith("WHO_AM_I_", StringComparison.Ordinal) ||
+                 sensorInfo.Status.StartsWith("WIFI_", StringComparison.Ordinal))) return;
             if (message is ErrorMessage errorReply && errorReply.Code.StartsWith("CONTROL_", StringComparison.Ordinal))
                 _controlReply?.TrySetException(new InvalidOperationException(errorReply.Code));
             else if (_controlReplyMatches?.Invoke(message) == true) _controlReply?.TrySetResult(message);
@@ -661,7 +691,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 HelloMessage hello => $"Firmware protocol {hello.ProtocolVersion}, target {hello.SampleRateHz} Hz",
                 StatusMessage status => HumanizeStatus(status.Status),
                 ErrorMessage error => $"Device error: {error.Code}",
-                PongMessage => "Device responded to ping",
+                PongMessage => DeviceStatus,
                 _ => DeviceStatus
             };
         });

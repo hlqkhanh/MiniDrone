@@ -45,6 +45,7 @@ public sealed class BalanceWorkflowTests
         var commands = new List<string>();
         int suppressGainReplies = 0;
         int closing = 0;
+        var finishCalibration = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var server = Task.Run(async () =>
         {
             using var client = await listener.AcceptTcpClientAsync();
@@ -55,7 +56,10 @@ public sealed class BalanceWorkflowTests
                 lock (commands) commands.Add(line);
                 if (line == "INFO")
                 {
-                    await writer.WriteLineAsync("STATUS,MOTOR_AVAILABLE\nSTATUS,MOTOR_ADVANCED_V2\nSTATUS,CONTROL_V1\nPID,ROLL,0,0,0\nPID,PITCH,0,0,0");
+                    await writer.WriteLineAsync("HELLO,1,200\nSTATUS,MOTOR_AVAILABLE\nSTATUS,MOTOR_ADVANCED_V2\nSTATUS,CONTROL_V1\nPID,ROLL,0,0,0\nPID,PITCH,0,0,0");
+                    await writer.WriteLineAsync("STATUS,SENSOR_MPU6500\nSTATUS,CALIBRATING\nCAL,250,500,COLLECTING\nERROR,WIFI_CONNECT_TIMEOUT_CHECK_PORTAL\nPONG");
+                    await finishCalibration.Task.WaitAsync(TimeSpan.FromSeconds(3));
+                    await writer.WriteLineAsync("CAL,500,500,COMPLETE\nSTATUS,READY\nQ,1,10000,1,0,0,0");
                 }
                 else if (line.StartsWith("PID SET "))
                 {
@@ -83,6 +87,15 @@ public sealed class BalanceWorkflowTests
             vm.WifiHost = "127.0.0.1"; vm.WifiPort = ((IPEndPoint)listener.LocalEndpoint).Port;
             vm.ConnectCommand.Execute(null);
             await Until(() => vm.ControlEditable);
+            await Until(() => !vm.CalibrateCommand.CanExecute(null));
+            vm.OnRenderFrame();
+            Assert.Contains("Calibration 50%", vm.TelemetryStatus);
+            Assert.DoesNotContain("verify main firmware", vm.TelemetryStatus);
+            Assert.False(vm.ArmControlCommand.CanExecute(null));
+            finishCalibration.TrySetResult();
+            await Until(() => vm.DeviceStatus == "MPU6500 ready");
+            await Until(() => { vm.OnRenderFrame(); return vm.TelemetryStatus == "Receiving live orientation"; });
+            Assert.True(vm.CalibrateCommand.CanExecute(null));
             vm.WifiMode=vm.WifiModes[1-wifiMode];
             Assert.Equal(vm.WifiModes[wifiMode],vm.WifiMode);
             vm.RollKp = "0.2"; vm.RollKi = "0.01"; vm.RollKd = "0.003";
