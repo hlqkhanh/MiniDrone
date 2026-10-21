@@ -2,7 +2,7 @@
 
 Thử riêng 4 động cơ: xem [MotorTest](MotorTest/README.md). Sketch thử độc lập, tự dừng sau tối đa 2 giây; nạp lại sketch cảm biến để dùng app 3D.
 
-**Cấu hình Wi-Fi bằng trình duyệt:** xem [hướng dẫn Wi-Fi](WIFI.md). Nối vào `DroneMotion_Setup-XXXX`, mật khẩu `drone12345`, mở `http://192.168.4.1` để chọn mạng. App dùng IP trên trang sau khi ESP32 kết nối router, port `3333`.
+**Wi-Fi có hai cách kết nối:** nối laptop vào `DroneMotion_Setup-XXXX`, mật khẩu `drone12345`, trong WPF chọn **Direct ESP32 Wi-Fi** và dùng `192.168.4.1:3333`; hoặc mở `http://192.168.4.1` để cấu hình router, rồi chọn **Router / hotspot** trên WPF và nhập IP LAN của ESP32. Xem [hướng dẫn Wi-Fi](WIFI.md).
 
 Sketch: [DroneMotionMpu6050.ino](DroneMotionMpu6050/DroneMotionMpu6050.ino), kèm `TelemetryOutput.h` cùng thư mục. Giữ tên thư mục cũ để mở lại thuận tiện trong Arduino IDE.
 
@@ -80,7 +80,7 @@ Firmware xử lý lệnh giữa các mẫu. Trong lúc hiệu chuẩn, lệnh ch
 
 Giao thức HELLO/STATUS/ERROR/Q và CAL/PING giữ nguyên nên dùng được với bản app đã build, không cần build lại WPF. INFO trả thêm các dòng STATUS mà parser hiện tại đã hỗ trợ.
 
-Sketch có AP cấu hình web và STA để truyền dữ liệu trên Wi-Fi có sẵn; không cung cấp điều khiển bay của firmware nhà cung cấp. Nạp sketch sẽ thay chương trình đang có trên ESP32.
+Sketch có AP để kết nối WPF trực tiếp và cấu hình web, đồng thời hỗ trợ STA để dùng router/hotspot. Cả hai dùng cổng TCP 3333 và chỉ nhận một WPF client. Nạp sketch sẽ thay chương trình đang có trên ESP32.
 
 ## Nguồn đối chiếu
 

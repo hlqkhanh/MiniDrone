@@ -1,6 +1,8 @@
 ﻿# Cấu hình Wi-Fi ESP32 bằng điện thoại hoặc laptop
 
-ESP32 phát Wi-Fi cấu hình để bạn mở trình duyệt, quét/chọn mạng và nhập mật khẩu. Sau khi kết nối router thành công, cấu hình được lưu trong flash (NVS), lần bật sau tự kết nối lại. App 3D dùng IP của ESP32 trong mạng router và port 3333. Động cơ mặc định tắt; MANUAL MOTOR OUTPUT trong app cho đặt PWM 0–100% riêng từng động cơ hoặc cả bốn, thời gian tùy chọn hoặc liên tục, sau khi tháo cánh. Firmware V2 tự dừng khi thiếu KEEPALIVE khoảng 2 giây.
+ESP32 hỗ trợ hai cách kết nối WPF: nối thẳng vào Wi-Fi ESP32 tại `192.168.4.1:3333`, hoặc qua router/hotspot bằng IP LAN của ESP32. Chọn cách kết nối trong danh sách Wi-Fi trên WPF; cả hai dùng cùng giao thức điều khiển motor/PID. Không cần Internet. AP vẫn bật khi dùng router; chỉ nhận một WPF client mỗi lần. Thay cách kết nối sau khi Stop/Disconnect rồi chuyển mạng Wi-Fi của laptop.
+
+Với cách qua router, cấu hình mạng lưu trong flash (NVS) và lần bật sau tự kết nối lại. Động cơ mặc định tắt; manual test và PID vẫn có watchdog, dừng khi mất kết nối/heartbeat. Kết nối lại không tự chạy motor.
 
 ## 1. Nạp firmware một lần
 
@@ -8,7 +10,16 @@ ESP32 phát Wi-Fi cấu hình để bạn mở trình duyệt, quét/chọn mạ
 2. Chọn **ESP32 Dev Module**, COM USB thực tế (trước đây COM6), **Upload Speed 115200**, rồi Upload. Disconnect app nếu đang dùng COM, đóng Serial Monitor trước khi nạp.
 3. Không cần điền SSID/mật khẩu trong WifiConfig.local.h. Phiên bản này lấy thông tin mạng từ trang web/NVS; các trường SSID/mật khẩu cũ trong file local không còn được sử dụng. File local, nếu có, vẫn được Git bỏ qua; Port trong file đó vẫn được dùng, mặc định 3333.
 
-## 2. Mở trang cấu hình trên điện thoại/laptop
+## 2. Kết nối trực tiếp không cần router hoặc điện thoại
+
+1. Nạp firmware mới và cấp nguồn ESP32, giữ board yên để hiệu chuẩn.
+2. Laptop kết nối Wi-Fi **DroneMotion_Setup-XXXX**, mật khẩu **drone12345**. Chọn giữ kết nối khi Windows báo không có Internet.
+3. Trong WPF bật Wi-Fi, chọn **Direct ESP32 Wi-Fi**. IP mặc định **192.168.4.1**, port **3333**; bấm Connect.
+4. Không cần mở trang cấu hình hay chọn mạng khác. Dùng các nút PID/motor như khi kết nối qua router.
+
+Trang `http://192.168.4.1` vẫn dùng để cấu hình router khi cần. Cổng `3333` dùng TCP của WPF, không mở bằng trình duyệt. Mạng Wi-Fi phải được chọn trong Windows; danh sách trên WPF chỉ chọn địa chỉ/cách kết nối, không tự chuyển Wi-Fi của laptop.
+
+## 3. Cấu hình cách qua router hoặc hotspot
 
 1. Cấp nguồn cho ESP32, chờ khởi động/hiệu chuẩn khoảng 3 giây.
 2. Mở danh sách Wi-Fi và kết nối mạng **DroneMotion_Setup-XXXX** (4 ký tự cuối tùy bo), mật khẩu **drone12345**.
@@ -28,17 +39,17 @@ Nếu mạng dùng **PEAP**, chọn **Trường / công ty (PEAP)**, điền m�
 
 Trang này hỗ trợ mạng cá nhân, mạng mở và WPA2-Enterprise PEAP. Mạng yêu cầu EAP-TLS/chứng chỉ máy khách hoặc trang đăng nhập web cần cấu hình riêng. Mạng trường/khách có thể chặn giao tiếp giữa các thiết bị dù ESP32 đã có IP; đó là vấn đề quyền truy cập của LAN, không phải app thiếu cổng COM.
 
-## 3. Nhận dữ liệu trên app 3D
+## 4. Nhận dữ liệu trên app 3D qua router hoặc hotspot
 
 1. Ghi lại IP/port trang cấu hình vừa hiển thị.
-2. Trên laptop, kết nối trở lại **mạng router mà ESP32 vừa tham gia**. Có thể dùng điện thoại cấu hình để laptop không phải chuyển mạng trong bước 2.
-3. Mở **Drone Motion Viewer**, bật **Wi-Fi**, nhập IP ESP32 và port **3333**, bấm **Connect**.
+2. Trên laptop, kết nối trở lại **mạng router mà ESP32 vừa tham gia**. Có thể dùng điện thoại mở trang cấu hình để laptop không phải chuyển mạng.
+3. Mở **Drone Motion Viewer**, bật **Wi-Fi**, chọn **Router / hotspot**, nhập IP LAN của ESP32 và port **3333**, bấm **Connect**. App nhớ riêng IP đã nhập cho mỗi cách kết nối trong phiên hiện tại.
 4. Khi Data khoảng 100 samples/s, đặt bo ở tư thế chuẩn, bấm **Zero orientation**, rồi nghiêng/xoay để kiểm tra mô hình. **Calibrate** vẫn gửi lệnh qua Wi-Fi.
 5. Khi rút USB, bo cần nguồn/pin riêng phù hợp. Wi-Fi không cấp điện. Nếu bo khởi động lại khi đổi nguồn, chờ hiệu chuẩn và bấm Connect lại app.
 
 Không mở cổng 3333 bằng trình duyệt: đây là cổng TCP cho dữ liệu quaternion. Trang cấu hình web dùng cổng 80 tại địa chỉ AP; trang web chỉ mở từ kết nối Wi-Fi cấu hình của ESP32.
 
-## 4. Đổi mạng, khôi phục và xem lại IP
+## 5. Đổi mạng, khôi phục và xem lại IP
 
 - Đổi router/mật khẩu: nối lại DroneMotion_Setup-XXXX, mở trang, nhập mạng mới. Không cần sửa code hoặc nạp lại.
 - Nhập sai mật khẩu: trang báo lỗi sau khoảng 30 giây, cho phép thử lại. Cấu hình mới chỉ được ghi xuống flash sau khi xác thực và nhận IP; mạng đã lưu trước đó vẫn giữ nguyên nếu lần thử mới thất bại.
@@ -52,10 +63,11 @@ Không mở cổng 3333 bằng trình duyệt: đây là cổng TCP cho dữ li�
 
 Cấu hình mạng được lưu trong flash ESP32, không được trả lại mật khẩu qua API/trang trạng thái hoặc in ra Serial. Mạng cấu hình dùng mật khẩu thử nghiệm cố định drone12345; dùng nút xóa trước khi chuyển bo cho người khác nếu cần xóa mạng đã lưu. Không chọn Erase All Flash khi nạp nếu muốn giữ cấu hình NVS.
 
-## 5. Kiểm tra và dùng USB
+## 6. Kiểm tra và dùng USB
 
 - Bỏ chọn Wi-Fi trong app khi Disconnect, chọn COM/115200 để nhận USB. Không cần đổi firmware. Sửa hướng pitch/yaw vẫn áp dụng ở cả hai chế độ.
 - Quét Wi-Fi và phục vụ trang cấu hình có thể gây gián đoạn ngắn trong lúc cấu hình. Kết nối router xong, đóng trang khi kiểm tra độ mượt mô hình.
+- Khi STA đổi IP hoặc mất router, firmware chỉ đóng socket dùng STA; listener TCP và socket AP không bị chủ động khởi động lại. ESP32 dùng chung radio cho AP/STA: đổi kênh hoặc quét mạng vẫn có thể làm kết nối trực tiếp gián đoạn. Cấu hình mạng khi motor đã dừng; nếu mất kết nối, watchdog vẫn ngắt motor và cần Connect/Arm/Start lại.
 - Kiểm thử giao diện với API giả (Node 22+ và Chrome): `node tests/portal/wifi-portal.test.cjs`. Kiểm thử này kiểm tra trang web, không thay thế kiểm tra Wi-Fi/NVS trên bo thật.
 
 Nguồn: [API Wi-Fi Espressif](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/wifi.html), [Preferences/NVS](https://docs.espressif.com/projects/arduino-esp32/en/latest/tutorials/preferences.html).

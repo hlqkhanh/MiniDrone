@@ -18,7 +18,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly TcpConnectionService _tcp = new();
     private bool _useWifi = true;
     private bool _isConnecting;
-    private string _wifiHost = "";
+    private string _wifiHost = "192.168.4.1";
+    private string _wifiMode = "Direct ESP32 Wi-Fi";
+    private string _directHost = "192.168.4.1", _routerHost = "";
     private int _wifiPort = 3333;
     private readonly OrientationService _orientation = new();
     private readonly SynchronizationContext _uiContext;
@@ -109,6 +111,22 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<int> BaudRates { get; } = [115200, 57600, 38400, 19200, 9600];
 
     public bool CanEditConnection => !IsConnected && !_isConnecting;
+    public IReadOnlyList<string> WifiModes { get; } = ["Direct ESP32 Wi-Fi", "Router / hotspot"];
+    public string WifiMode
+    {
+        get => _wifiMode;
+        set
+        {
+            if (!CanEditConnection || !WifiModes.Contains(value) || value == _wifiMode) return;
+            if (_wifiMode == WifiModes[0]) _directHost = WifiHost; else _routerHost = WifiHost;
+            SetProperty(ref _wifiMode, value);
+            WifiHost = value == WifiModes[0] ? _directHost : _routerHost;
+            OnPropertyChanged(nameof(WifiInstructions));
+        }
+    }
+    public string WifiInstructions => WifiMode == WifiModes[0]
+        ? "Connect laptop to DroneMotion_Setup-XXXX (password: drone12345). Keep connected without Internet. Then Connect to 192.168.4.1:3333."
+        : "Connect laptop and ESP32 to the same router or 2.4 GHz hotspot. Enter the ESP32 IP from the setup page or Serial Monitor.";
     public bool UseWifi
     {
         get => _useWifi;

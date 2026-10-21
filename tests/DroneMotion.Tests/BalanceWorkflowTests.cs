@@ -8,8 +8,10 @@ namespace DroneMotion.Tests;
 
 public sealed class BalanceWorkflowTests
 {
-    [Fact]
-    public async Task WpfAppliesAcknowledgedGainsAndArmsStartsStopsOverTcp()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task WpfAppliesAcknowledgedGainsAndArmsStartsStopsOverTcp(int wifiMode)
     {
         var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -18,7 +20,7 @@ public sealed class BalanceWorkflowTests
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
             dispatcher.BeginInvoke(new Action(async () =>
             {
-                try { await ExerciseWorkflow(); completed.TrySetResult(); }
+                try { await ExerciseWorkflow(wifiMode); completed.TrySetResult(); }
                 catch (Exception e) { completed.TrySetException(e); }
                 finally { dispatcher.BeginInvokeShutdown(DispatcherPriority.Normal); }
             }));
@@ -36,12 +38,13 @@ public sealed class BalanceWorkflowTests
         Assert.True(condition(), "Workflow did not reach expected state");
     }
 
-    private static async Task ExerciseWorkflow()
+    private static async Task ExerciseWorkflow(int wifiMode)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var commands = new List<string>();
         int suppressGainReplies = 0;
+        int closing = 0;
         var server = Task.Run(async () =>
         {
             using var client = await listener.AcceptTcpClientAsync();
@@ -68,9 +71,20 @@ public sealed class BalanceWorkflowTests
         });
         await using (var vm = new MainViewModel())
         {
+            Assert.Equal("192.168.4.1", vm.WifiHost);
+            vm.WifiMode=vm.WifiModes[1];
+            Assert.Equal("",vm.WifiHost);
+            vm.WifiHost="192.168.1.55";
+            vm.WifiMode=vm.WifiModes[0];
+            Assert.Equal("192.168.4.1",vm.WifiHost);
+            vm.WifiMode=vm.WifiModes[1];
+            Assert.Equal("192.168.1.55",vm.WifiHost);
+            vm.WifiMode=vm.WifiModes[wifiMode];
             vm.WifiHost = "127.0.0.1"; vm.WifiPort = ((IPEndPoint)listener.LocalEndpoint).Port;
             vm.ConnectCommand.Execute(null);
             await Until(() => vm.ControlEditable);
+            vm.WifiMode=vm.WifiModes[1-wifiMode];
+            Assert.Equal(vm.WifiModes[wifiMode],vm.WifiMode);
             vm.RollKp = "0.2"; vm.RollKi = "0.01"; vm.RollKd = "0.003";
             vm.PitchKp = "0.15";
             vm.ApplyPidCommand.Execute(null);
@@ -101,7 +115,9 @@ public sealed class BalanceWorkflowTests
             vm.StopMotorsCommand.Execute(null);
             await Until(() => vm.ControlEditable);
             lock (commands) Assert.Equal(1, commands.Count(c => c == "PID SET PITCH 0.15 0 0"));
+            Volatile.Write(ref closing,1);
         }
-        await server.WaitAsync(TimeSpan.FromSeconds(3));
+        try { await server.WaitAsync(TimeSpan.FromSeconds(3)); }
+        catch (IOException) when (Volatile.Read(ref closing)==1) { /* Client disposal can reset a socket with an unread STOP acknowledgement. */ }
     }
 }

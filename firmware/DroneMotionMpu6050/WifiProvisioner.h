@@ -125,6 +125,8 @@ class WifiProvisioner {
   void report() {
     log_->print(F("STATUS,WIFI_SETUP_")); log_->println(setupSsid_);
     log_->print(F("STATUS,SETUP_URL_http://")); log_->println(WiFi.softAPIP());
+    log_->print(F("STATUS,TCP_AP_")); log_->print(WiFi.softAPIP());
+    log_->print(':'); log_->println(port_);
     if (connected()) {
       log_->print(F("STATUS,TCP_")); log_->print(WiFi.localIP());
       log_->print(':'); log_->println(port_);

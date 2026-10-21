@@ -44,6 +44,8 @@ class TelemetryOutput : public Print {
   void beginWifi() {
 #if defined(ARDUINO_ARCH_ESP32)
     portal_.begin(*this, WifiConfig::Port);
+    // Bind all interfaces once: the AP is usable even without a router.
+    server_.begin();
 #endif
   }
 
@@ -56,7 +58,6 @@ class TelemetryOutput : public Print {
 #if defined(ARDUINO_ARCH_ESP32)
     pollWifi();
     flushWifi();
-    if (!wifiReady_) return false;
     auto incoming = server_.accept();
     if (!incoming) return false;
     if (client_.connected()) { incoming.stop(); return false; }
@@ -102,34 +103,26 @@ class TelemetryOutput : public Print {
 
   void pollWifi() {
     portal_.poll();
-    if (portal_.stationReady()) {
-      const IPAddress ip = WiFi.localIP();
-      if (!wifiReady_ || ip != localIp_) {
+    const bool stationReady = portal_.stationReady();
+    const IPAddress ip = stationReady ? WiFi.localIP() : IPAddress(0, 0, 0, 0);
+    if (stationReady != stationReady_ || ip != localIp_) {
+      // A router reconnect must not revoke a viewer connected to the AP.
+      // Only an obsolete STA socket is closed; the shared listener stays up.
+      if (client_.connected() && client_.localIP() != WiFi.softAPIP()) {
         client_.stop();
         tx_.clear();
-        server_.end();
-        server_.begin();
-        localIp_ = ip;
-        wifiReady_ = true;
-        println(F("STATUS,WIFI_STA_CONNECTED"));
-        reportWifiInfo();
       }
-      return;
-    }
-    if (wifiReady_) {
-      client_.stop();
-      tx_.clear();
-      server_.end();
-      wifiReady_ = false;
-
-      println(F("ERROR,WIFI_DISCONNECTED_RECONNECTING"));
+      stationReady_ = stationReady;
+      localIp_ = ip;
+      println(stationReady ? F("STATUS,WIFI_STA_CONNECTED") : F("ERROR,WIFI_DISCONNECTED_RECONNECTING"));
+      reportWifiInfo();
     }
     // Reconnection and browser configuration are serviced by the portal.
   }
 
   NetworkServer server_{WifiConfig::Port};
   NetworkClient client_;
-  bool wifiReady_ = false;
+  bool stationReady_ = false;
   WifiProvisioner portal_;
   IPAddress localIp_;
 #endif

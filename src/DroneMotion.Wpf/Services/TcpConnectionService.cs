@@ -31,7 +31,7 @@ public sealed class TcpConnectionService : IAsyncDisposable
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             client.Dispose();
-            throw new TimeoutException("Cannot reach ESP32. Check its IP in Serial Monitor and connect both devices to the same LAN.");
+            throw new TimeoutException("Cannot reach ESP32. For direct Wi-Fi, join DroneMotion_Setup-XXXX and use 192.168.4.1:3333. For router mode, check the ESP32 LAN IP and connect both devices to the same network.");
         }
         catch
         {

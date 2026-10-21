@@ -49,7 +49,8 @@
                     <StackPanel IsEnabled="{Binding CanEditConnection}">
                     <CheckBox Content="Wi-Fi" IsChecked="{Binding UseWifi}" Foreground="#E2E8F0" Margin="0,0,0,10"/>
                     <StackPanel Visibility="{Binding UseWifi, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="Keep laptop and ESP32 on the same network. Enter the IP shown on the Wi-Fi setup page or Serial Monitor." Foreground="#67E8F9" TextWrapping="Wrap"/>
+                        <ComboBox ItemsSource="{Binding WifiModes}" SelectedItem="{Binding WifiMode}"/>
+                        <TextBlock Text="{Binding WifiInstructions}" Foreground="#67E8F9" TextWrapping="Wrap"/>
                         <TextBlock Text="ESP32 IP ADDRESS" FontSize="11" Foreground="#94A3B8" Margin="0,8,0,3"/>
                         <TextBox Text="{Binding WifiHost, UpdateSourceTrigger=PropertyChanged}" Padding="8,6"/>
                         <TextBlock Text="PORT" FontSize="11" Foreground="#94A3B8" Margin="0,8,0,3"/>
