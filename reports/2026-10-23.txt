@@ -1,0 +1,5 @@
+Báo cáo ngày 23/10/2026
+- Cập nhật bộ điều khiển PID hai tầng: PID góc và PID tốc độ quay; hỗ trợ chỉnh riêng thông số Roll/Pitch trên WPF.
+- Thử nghiệm, hiệu chỉnh các giá trị PID cân bằng thực tế trên đế
+- Sửa chiều hiệu chỉnh Roll theo phản hồi thực tế; bỏ giới hạn góc nghiêng khi Start và ngắt theo góc, giữ Arm và watchdog.
+- Bổ sung tài liệu giải thích luồng điều khiển, ý nghĩa các field PID và cách đọc dữ liệu phản hồi trên WPF.

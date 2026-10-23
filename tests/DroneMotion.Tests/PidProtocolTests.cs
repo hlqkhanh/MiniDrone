@@ -7,6 +7,17 @@ namespace DroneMotion.Tests;
 public sealed class PidProtocolTests
 {
     [Theory]
+    [InlineData("ANGLE_ROLL")]
+    [InlineData("ANGLE_PITCH")]
+    public void OuterLoopGainsRoundTrip(string axis)
+    {
+        Assert.True(PidSettings.TryCreate(axis, "2", "0.5", "0.007", out var settings));
+        Assert.Equal($"PID SET {axis} 2 0.5 0.007", settings!.Command);
+        var parsed = Assert.IsType<PidMessage>(Assert.Single(new SerialProtocolParser().Feed($"PID,{axis},2,0.5,0.007\n")));
+        Assert.Equal(settings, parsed.Settings);
+        Assert.False(PidSettings.TryCreate(axis, "2", "NaN", "0", out _));
+    }
+    [Theory]
     [InlineData("NaN", "0", "0")]
     [InlineData("-1", "0", "0")]
     [InlineData("1", "3", "0")]

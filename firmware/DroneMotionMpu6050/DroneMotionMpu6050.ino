@@ -488,10 +488,14 @@ void stopControl() { stopControl("CONTROL_STOPPED"); }
 void reportPID() {
 #if defined(ARDUINO_ARCH_ESP32)
   Telemetry.println(F("STATUS,CONTROL_V1"));
+  Telemetry.println(F("STATUS,CONTROL_CASCADE_V2"));
 #endif
-  for (int axis=1;axis<=2;axis++) {
-    const Flight::Gains &g = axis == 1 ? FlightControl.rollPID.gains : FlightControl.pitchPID.gains;
-    Telemetry.print(F("PID,")); Telemetry.print(axis == 1 ? "ROLL," : "PITCH,");
+  const char *names[] = {"ROLL,", "PITCH,", "ANGLE_ROLL,", "ANGLE_PITCH,"};
+  const Flight::PID *pids[] = {&FlightControl.rollPID, &FlightControl.pitchPID,
+                             &FlightControl.rollAnglePID, &FlightControl.pitchAnglePID};
+  for (int axis=0;axis<4;axis++) {
+    const Flight::Gains &g = pids[axis]->gains;
+    Telemetry.print(F("PID,")); Telemetry.print(names[axis]);
     Telemetry.print(g.kp, 6); Telemetry.print(','); Telemetry.print(g.ki, 6);
     Telemetry.print(','); Telemetry.println(g.kd, 6);
   }
@@ -503,10 +507,15 @@ void handleCommand(const char *command, bool wifi) {
     Telemetry.println(F("ERROR,CONTROL_ESP32_REQUIRED")); return;
 #endif
     if (FlightControl.active || controlArmed || !Motors.idle()) { Telemetry.println(F("ERROR,CONTROL_STOP_FIRST")); return; }
-    char axis[8], extra; float kp,ki,kd;
-    if (sscanf(command, "PID SET %7s %f %f %f %c", axis, &kp, &ki, &kd, &extra) == 4 &&
-        (strcmp(axis,"ROLL")==0 || strcmp(axis,"PITCH")==0) &&
-        FlightControl.setGains(strcmp(axis,"ROLL")==0 ? 1 : 2, Flight::Gains{kp,ki,kd})) reportPID();
+    char axis[16], extra; float kp,ki,kd;
+    int selected = 0;
+    if (sscanf(command, "PID SET %15s %f %f %f %c", axis, &kp, &ki, &kd, &extra) == 4) {
+      if (strcmp(axis,"ROLL")==0) selected=1;
+      else if (strcmp(axis,"PITCH")==0) selected=2;
+      else if (strcmp(axis,"ANGLE_ROLL")==0) selected=3;
+      else if (strcmp(axis,"ANGLE_PITCH")==0) selected=4;
+    }
+    if (selected && FlightControl.setGains(selected, Flight::Gains{kp,ki,kd})) reportPID();
     else Telemetry.println(F("ERROR,CONTROL_INVALID_GAINS"));
     return;
   }

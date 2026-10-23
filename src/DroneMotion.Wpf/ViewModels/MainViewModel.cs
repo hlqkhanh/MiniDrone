@@ -55,6 +55,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private bool _controlAvailable, _controlRunning, _controlArmed, _rigConfirmed, _stopPending;
     private string _rollKp = "0", _rollKi = "0", _rollKd = "0";
     private string _pitchKp = "0", _pitchKi = "0", _pitchKd = "0";
+    private string _angleRollKp = "2", _angleRollKi = "0", _angleRollKd = "0";
+    private string _anglePitchKp = "2", _anglePitchKi = "0", _anglePitchKd = "0";
+    private bool _cascadeAvailable;
     private string _baseDuty = "40", _rollTarget = "0", _pitchTarget = "0";
     private string _controlStatus = "Requires CONTROL_V1 firmware", _controlData = "No control data";
     private string _appliedPid = "Board gains not received", _controlAxis = "ROLL";
@@ -246,6 +249,13 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string PitchKp { get => _pitchKp; set { SetProperty(ref _pitchKp, value); CommandManager.InvalidateRequerySuggested(); } }
     public string PitchKi { get => _pitchKi; set { SetProperty(ref _pitchKi, value); CommandManager.InvalidateRequerySuggested(); } }
     public string PitchKd { get => _pitchKd; set { SetProperty(ref _pitchKd, value); CommandManager.InvalidateRequerySuggested(); } }
+    public bool CascadeEditable => ControlEditable && _cascadeAvailable;
+    public string AngleRollKp { get => _angleRollKp; set { SetProperty(ref _angleRollKp, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string AngleRollKi { get => _angleRollKi; set { SetProperty(ref _angleRollKi, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string AngleRollKd { get => _angleRollKd; set { SetProperty(ref _angleRollKd, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string AnglePitchKp { get => _anglePitchKp; set { SetProperty(ref _anglePitchKp, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string AnglePitchKi { get => _anglePitchKi; set { SetProperty(ref _anglePitchKi, value); CommandManager.InvalidateRequerySuggested(); } }
+    public string AnglePitchKd { get => _anglePitchKd; set { SetProperty(ref _anglePitchKd, value); CommandManager.InvalidateRequerySuggested(); } }
     public string BaseDuty { get => _baseDuty; set { SetProperty(ref _baseDuty, value); CommandManager.InvalidateRequerySuggested(); } }
     public string RollTarget { get => _rollTarget; set { SetProperty(ref _rollTarget, value); CommandManager.InvalidateRequerySuggested(); } }
     public string PitchTarget { get => _pitchTarget; set { SetProperty(ref _pitchTarget, value); CommandManager.InvalidateRequerySuggested(); } }
@@ -277,17 +287,23 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     }
     private void SetControlBusy(bool busy)
     {
-        _controlBusy = busy; OnPropertyChanged(nameof(ControlEditable)); CommandManager.InvalidateRequerySuggested();
+        _controlBusy = busy; OnPropertyChanged(nameof(ControlEditable)); OnPropertyChanged(nameof(CascadeEditable)); CommandManager.InvalidateRequerySuggested();
     }
     private bool TryPids(out PidSettings? roll, out PidSettings? pitch)
     {
         var r = PidSettings.TryCreate("ROLL", RollKp, RollKi, RollKd, out roll);
         var p = PidSettings.TryCreate("PITCH", PitchKp, PitchKi, PitchKd, out pitch);
-        return r && p;
+        var angles = !_cascadeAvailable ||
+            PidSettings.TryCreate("ANGLE_ROLL", AngleRollKp, AngleRollKi, AngleRollKd, out _) &&
+            PidSettings.TryCreate("ANGLE_PITCH", AnglePitchKp, AnglePitchKi, AnglePitchKd, out _);
+        return r && p && angles;
     }
     private bool SelectedGainsReady() =>
         (ControlAxis == "PITCH" || _boardPids.TryGetValue("ROLL", out var roll) && roll.Kp > 0) &&
-        (ControlAxis == "ROLL" || _boardPids.TryGetValue("PITCH", out var pitch) && pitch.Kp > 0);
+        (ControlAxis == "ROLL" || _boardPids.TryGetValue("PITCH", out var pitch) && pitch.Kp > 0) &&
+        (!_cascadeAvailable ||
+            (ControlAxis == "PITCH" || _boardPids.TryGetValue("ANGLE_ROLL", out var ar) && ar.Kp > 0) &&
+            (ControlAxis == "ROLL" || _boardPids.TryGetValue("ANGLE_PITCH", out var ap) && ap.Kp > 0));
     private bool ValidControlInputs(out double duty, out double roll, out double pitch)
     {
         var a = double.TryParse(BaseDuty, NumberStyles.Float, CultureInfo.InvariantCulture, out duty);
@@ -299,14 +315,24 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task ApplyPidAsync()
     {
         if (!ControlEditable || !TryPids(out var roll, out var pitch)) return;
+        // Capture all inputs before awaiting; a Stop cancels the rest of this batch.
+        var settings = new List<PidSettings> { roll!, pitch! };
+        if (_cascadeAvailable)
+        {
+            if (!PidSettings.TryCreate("ANGLE_ROLL", AngleRollKp, AngleRollKi, AngleRollKd, out var ar) ||
+                !PidSettings.TryCreate("ANGLE_PITCH", AnglePitchKp, AnglePitchKi, AnglePitchKd, out var ap)) return;
+            settings.Add(ar!); settings.Add(ap!);
+        }
         var version = ++_motorRequestVersion;
         SetControlBusy(true);
         try
         {
             ControlStatus = "Sending gains; waiting for board acknowledgement";
-            await RequestControlAsync(roll!.Command, m => m is PidMessage p && SameGains(p.Settings, roll));
-            if (version == _motorRequestVersion && IsConnected)
-                await RequestControlAsync(pitch!.Command, m => m is PidMessage p && SameGains(p.Settings, pitch));
+            foreach (var setting in settings)
+            {
+                if (version != _motorRequestVersion || !IsConnected) break;
+                await RequestControlAsync(setting.Command, m => m is PidMessage p && SameGains(p.Settings, setting));
+            }
         }
         finally { SetControlBusy(false); }
     }
@@ -346,7 +372,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             Directory.CreateDirectory(directory);
             var path = Path.Combine(directory, $"pid-{DateTime.Now:yyyyMMdd-HHmmss-fff}.csv");
             _controlLog = new StreamWriter(path) { AutoFlush = true };
-            _controlLog.WriteLine("micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active,rollKp,rollKi,rollKd,pitchKp,pitchKi,pitchKd");
+            _controlLog.WriteLine("micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active,rollKp,rollKi,rollKd,pitchKp,pitchKi,pitchKd,angleRollKp,angleRollKi,angleRollKd,anglePitchKp,anglePitchKi,anglePitchKd");
             LogStatus = path;
         }
         catch (Exception e) { ShowError(e); }
@@ -429,7 +455,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         ++_motorRequestVersion;
         _motorRunning = false;
         _controlRunning = _controlArmed = false;
-        OnPropertyChanged(nameof(ControlEditable));
+        OnPropertyChanged(nameof(ControlEditable)); OnPropertyChanged(nameof(CascadeEditable));
         return SendCommandAsync("MOTOR STOP");
     }
 
@@ -452,6 +478,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         _stopPending = false;
         _controlAvailable = _controlRunning = _controlArmed = false;
         _boardPids.Clear(); AppliedPid = "Board gains not received";
+        _cascadeAvailable = false; OnPropertyChanged(nameof(CascadeEditable));
         RigConfirmed = false; ControlStatus = "Requires CONTROL_V1 firmware";
         OnPropertyChanged(nameof(ControlEditable));
         _motorsAvailable = false;
@@ -634,18 +661,19 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 var v = control.Values;
                 ControlData = FormattableString.Invariant($"FW angle R {v[1]:F2}° P {v[2]:F2}° | rate {v[3]:F1}/{v[4]:F1}°/s\nTarget {v[5]:F1}/{v[6]:F1}°\nRoll P/I/D {v[7]:F2}/{v[8]:F2}/{v[9]:F2}\nPitch P/I/D {v[10]:F2}/{v[11]:F2}/{v[12]:F2}\nPWM {v[13]}/{v[14]}/{v[15]}/{v[16]} | saturation {v[17]}");
-                try { _controlLog?.WriteLine($"{control.Csv},{CsvGains("ROLL")},{CsvGains("PITCH")}"); } catch (Exception e) { _controlLog?.Dispose(); _controlLog = null; LogStatus = e.Message; }
+                try { _controlLog?.WriteLine($"{control.Csv},{CsvGains("ROLL")},{CsvGains("PITCH")},{CsvGains("ANGLE_ROLL")},{CsvGains("ANGLE_PITCH")}"); } catch (Exception e) { _controlLog?.Dispose(); _controlLog = null; LogStatus = e.Message; }
                 return;
             }
             if (message is StatusMessage cs && cs.Status.StartsWith("CONTROL_", StringComparison.Ordinal))
             {
                 if (cs.Status == "CONTROL_STOPPED") _stopPending = false;
                 if (cs.Status == "CONTROL_V1") _controlAvailable = true;
+                if (cs.Status == "CONTROL_CASCADE_V2") { _cascadeAvailable = true; OnPropertyChanged(nameof(CascadeEditable)); }
                 else if (cs.Status == "CONTROL_RUNNING") { _controlRunning = true; _controlArmed = false; }
                 else if (cs.Status == "CONTROL_ARMED") _controlArmed = true;
-                else if (cs.Status is not ("CONTROL_ZEROED" or "CONTROL_SETPOINT_OK")) _controlRunning = _controlArmed = false;
+                else if (cs.Status is not ("CONTROL_V1" or "CONTROL_ZEROED" or "CONTROL_SETPOINT_OK")) _controlRunning = _controlArmed = false;
                 ControlStatus = cs.Status;
-                OnPropertyChanged(nameof(ControlEditable)); CommandManager.InvalidateRequerySuggested(); return;
+                OnPropertyChanged(nameof(ControlEditable)); OnPropertyChanged(nameof(CascadeEditable)); CommandManager.InvalidateRequerySuggested(); return;
             }
             if (message is ErrorMessage ce && ce.Code.StartsWith("CONTROL_", StringComparison.Ordinal))
             {
@@ -671,7 +699,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 if (motor.Status == "MOTOR_RUNNING") _motorRunning = true;
                 if (motor.Status is "MOTOR_STOPPED" or "MOTOR_UNAVAILABLE" or "MOTOR_ARMED") _motorRunning = false;
                 if (motor.Status is "MOTOR_STOPPED" or "MOTOR_UNAVAILABLE") { _controlRunning = _controlArmed = false; _stopPending = false; }
-                OnPropertyChanged(nameof(ControlEditable));
+                OnPropertyChanged(nameof(ControlEditable)); OnPropertyChanged(nameof(CascadeEditable));
                 CommandManager.InvalidateRequerySuggested();
                 return;
             }

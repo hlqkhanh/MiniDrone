@@ -1,5 +1,7 @@
 # MPU6050 3D Motion Viewer
 
+**Luồng điều khiển hai tầng mới:** xem [PID góc → PID tốc độ → PWM và cách chỉnh trên WPF](doc/vi/luong-dieu-khien-cascade.md). Firmware báo `CONTROL_CASCADE_V2`; vòng góc chỉnh được độc lập, mặc định 2/0/0, giữ SPI, mapping motor và watchdog của hệ thống Drone.
+
 **Cân bằng PID trên đế giữ drone (ESP32):** xem [hướng dẫn PID và chỉnh gain trên WPF](doc/vi/pid-can-bang-tren-de.md). Có chỉnh Kp/Ki/Kd riêng roll/pitch, Arm/Start/Stop, telemetry và CSV. Gain mặc định bằng 0; cần xác minh mapping và chỉnh trên đế trước khi dùng.
 
 **Wi-Fi có hai cách:** nối thẳng laptop vào `DroneMotion_Setup-XXXX` (mật khẩu `drone12345`), trong WPF chọn **Direct ESP32 Wi-Fi** và `192.168.4.1:3333`; hoặc chọn **Router / hotspot** và IP LAN của ESP32. Cách trực tiếp không cần router, điện thoại hoặc Internet. Xem [cách nạp và kết nối Wi-Fi](firmware/WIFI.md).

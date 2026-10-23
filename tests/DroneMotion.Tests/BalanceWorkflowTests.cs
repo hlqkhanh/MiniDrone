@@ -11,7 +11,8 @@ public sealed class BalanceWorkflowTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task WpfAppliesAcknowledgedGainsAndArmsStartsStopsOverTcp(int wifiMode)
+    [InlineData(2)]
+    public async Task WpfAppliesAcknowledgedGainsAndArmsStartsStopsOverTcp(int scenario)
     {
         var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -20,7 +21,7 @@ public sealed class BalanceWorkflowTests
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
             dispatcher.BeginInvoke(new Action(async () =>
             {
-                try { await ExerciseWorkflow(wifiMode); completed.TrySetResult(); }
+                try { await ExerciseWorkflow(scenario % 2, scenario == 2); completed.TrySetResult(); }
                 catch (Exception e) { completed.TrySetException(e); }
                 finally { dispatcher.BeginInvokeShutdown(DispatcherPriority.Normal); }
             }));
@@ -38,7 +39,7 @@ public sealed class BalanceWorkflowTests
         Assert.True(condition(), "Workflow did not reach expected state");
     }
 
-    private static async Task ExerciseWorkflow(int wifiMode)
+    private static async Task ExerciseWorkflow(int wifiMode, bool cascade)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -57,6 +58,7 @@ public sealed class BalanceWorkflowTests
                 if (line == "INFO")
                 {
                     await writer.WriteLineAsync("HELLO,1,200\nSTATUS,MOTOR_AVAILABLE\nSTATUS,MOTOR_ADVANCED_V2\nSTATUS,CONTROL_V1\nPID,ROLL,0,0,0\nPID,PITCH,0,0,0");
+                    if (cascade) await writer.WriteLineAsync("STATUS,CONTROL_CASCADE_V2\nPID,ANGLE_ROLL,2,0,0\nPID,ANGLE_PITCH,2,0,0");
                     await writer.WriteLineAsync("STATUS,SENSOR_MPU6500\nSTATUS,CALIBRATING\nCAL,250,500,COLLECTING\nERROR,WIFI_CONNECT_TIMEOUT_CHECK_PORTAL\nPONG");
                     await finishCalibration.Task.WaitAsync(TimeSpan.FromSeconds(3));
                     await writer.WriteLineAsync("CAL,500,500,COMPLETE\nSTATUS,READY\nQ,1,10000,1,0,0,0");
@@ -100,8 +102,14 @@ public sealed class BalanceWorkflowTests
             Assert.Equal(vm.WifiModes[wifiMode],vm.WifiMode);
             vm.RollKp = "0.2"; vm.RollKi = "0.01"; vm.RollKd = "0.003";
             vm.PitchKp = "0.15";
+            if (cascade) {
+                await Until(() => vm.CascadeEditable);
+                vm.AngleRollKi = "0.1";
+                vm.AnglePitchKd = "0.007";
+            }
             vm.ApplyPidCommand.Execute(null);
-            await Until(() => vm.ControlEditable && vm.AppliedPid.Contains("PITCH: P=0.15"));
+            await Until(() => vm.ControlEditable && vm.AppliedPid.Contains("PITCH: P=0.15") &&
+                (!cascade || vm.AppliedPid.Contains("ANGLE_PITCH: P=2 I=0 D=0.007")));
             vm.RigConfirmed = true;
             vm.ArmControlCommand.Execute(null);
             await Until(() => vm.StartControlCommand.CanExecute(null));
@@ -115,6 +123,10 @@ public sealed class BalanceWorkflowTests
             {
                 Assert.Contains("PID SET ROLL 0.2 0.01 0.003", commands);
                 Assert.Contains("PID SET PITCH 0.15 0 0", commands);
+                if (cascade) {
+                    Assert.Contains("PID SET ANGLE_ROLL 2 0.1 0", commands);
+                    Assert.Contains("PID SET ANGLE_PITCH 2 0 0.007", commands);
+                } else Assert.DoesNotContain(commands, c => c.StartsWith("PID SET ANGLE_"));
                 Assert.True(commands.IndexOf("CONTROL SETPOINT 0 0") < commands.IndexOf("CONTROL ARM"));
                 Assert.Contains("CONTROL START 40 1", commands);
                 Assert.Contains("MOTOR STOP", commands);

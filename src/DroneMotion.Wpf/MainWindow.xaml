@@ -166,13 +166,28 @@
                     <TextBlock Text="BALANCE ON TEST RIG" FontWeight="Bold" Margin="0,16,0,8"/>
                     <TextBlock Text="Rate PID: Kp 0–5, Ki 0–2, Kd 0–0.2. Use decimal point. Gains apply only while stopped. Default gains are zero; tune on rig." TextWrapping="Wrap" Foreground="#94A3B8"/>
                     <StackPanel IsEnabled="{Binding ControlEditable}" Margin="0,8,0,0">
-                        <TextBlock Text="Roll Kp / Ki / Kd"/>
+                        <StackPanel IsEnabled="{Binding CascadeEditable}">
+                            <TextBlock Text="Outer angle PID → target rate (±45 °/s). Default 2 / 0 / 0; requires cascade firmware." TextWrapping="Wrap"/>
+                            <TextBlock Text="Angle Roll Kp / Ki / Kd"/>
+                            <UniformGrid Columns="3">
+                                <TextBox Text="{Binding AngleRollKp, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                                <TextBox Text="{Binding AngleRollKi, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                                <TextBox Text="{Binding AngleRollKd, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                            </UniformGrid>
+                            <TextBlock Text="Angle Pitch Kp / Ki / Kd"/>
+                            <UniformGrid Columns="3">
+                                <TextBox Text="{Binding AnglePitchKp, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                                <TextBox Text="{Binding AnglePitchKi, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                                <TextBox Text="{Binding AnglePitchKd, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                            </UniformGrid>
+                        </StackPanel>
+                        <TextBlock Text="Inner rate Roll Kp / Ki / Kd" Margin="0,8,0,0"/>
                         <UniformGrid Columns="3">
                             <TextBox Text="{Binding RollKp, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
                             <TextBox Text="{Binding RollKi, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
                             <TextBox Text="{Binding RollKd, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
                         </UniformGrid>
-                        <TextBlock Text="Pitch Kp / Ki / Kd" Margin="0,6,0,0"/>
+                        <TextBlock Text="Inner rate Pitch Kp / Ki / Kd" Margin="0,6,0,0"/>
                         <UniformGrid Columns="3">
                             <TextBox Text="{Binding PitchKp, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
                             <TextBox Text="{Binding PitchKi, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
