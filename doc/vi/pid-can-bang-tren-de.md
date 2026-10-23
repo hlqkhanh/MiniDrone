@@ -5,14 +5,23 @@ Chế độ này điều khiển roll và pitch trên ESP32 bằng P góc và PI
 ## Nạp và sử dụng
 
 1. Nạp sketch chính `firmware/DroneMotionMpu6050/DroneMotionMpu6050.ino` cùng tất cả header bằng Arduino ESP32 core 3.x. Build lại WPF bằng .NET 8 hoặc SDK mới hơn. Chế độ này chỉ hỗ trợ ESP32.
-2. Đặt drone ngang và giữ yên để hiệu chuẩn gyro. Kết nối USB hoặc Wi-Fi, chờ `CONTROL_V1` và hai phản hồi gain. Các gain mặc định bằng 0, nên chưa thể Start.
+2. Đặt drone ngang và giữ yên để hiệu chuẩn gyro. Kết nối USB hoặc Wi-Fi, chờ `CONTROL_V2` và hai phản hồi gain. Các gain mặc định bằng 0, nên chưa thể Start.
 3. Tháo cánh để xác minh thứ tự motor và chiều IMU. LF/RF/LR/RR tương ứng GPIO14/15/12/13. Roll = âm góc quanh Y cảm biến, pitch = âm góc quanh X cảm biến, giống quy ước board trong WPF. Quy ước mixer: roll dương hạ phía phải, pitch dương hạ đầu. Phải kiểm tra điều này trên board và đế thật; nếu sai, sửa mapping trước khi chạy có lực đẩy.
 4. Gắn drone chắc vào đế có khoảng quay và khoảng hở cánh phù hợp. Đế phải cho trục thử quay tự do; nếu khóa cứng trục thì không thể đánh giá PID. Ma sát và trọng tâm đế ảnh hưởng gain; gain trên đế chưa chứng minh dùng được khi bay tự do.
 5. Trong **BALANCE ON TEST RIG**, chọn ROLL trước. Nhập Kp nhỏ, Ki=0, Kd=0. Bấm **Apply PID**, đối chiếu dòng gain đã nhận từ board. Không có bộ gain mặc định đã được xác nhận cho phần cứng này.
 6. Đặt base duty (đơn vị 0–255, cho nhập 1–180), tăng từ mức thấp phù hợp motor. Giữ target 0/0. **Set firmware level reference** lấy tư thế hiện tại làm mốc; chỉ cho phép khi tư thế thô nằm trong ±10°. Nút **Zero orientation** cũ chỉ đổi hình hiển thị, không đổi mốc PID.
 7. Xác nhận đế và chiều hiệu chỉnh, bấm **Arm balance**, rồi **Start balance** trong 15 giây. Esc hoặc **STOP / DISARM** dừng tất cả và xóa tích phân. Chỉnh gain chỉ khi đã Stop. Thay ô nhập không tự thay gain trên ESP32.
 8. Thử góc lệch nhỏ khoảng ±5°. Tăng Kp tốc độ từng bước; thêm Kd nếu cần giảm vượt góc, thêm Ki nhỏ khi còn sai lệch kéo dài. Lặp lại riêng cho PITCH rồi BOTH. P vòng góc cố định 2/s, giới hạn tốc độ mục tiêu ±45°/s.
-9. Bấm **Start / stop CSV log** để lưu dữ liệu trong Documents/DroneMotionLogs. Log chứa thời gian micro giây ESP32, góc, tốc độ, target, P/I/D, PWM LF/RF/LR/RR, bão hòa, active và sáu gain đã nhận từ board. Thời gian ESP32 tràn sau khoảng 71 phút; bắt đầu log mới sau reset.
+9. Mở tab **Live PID plots** để xem 30 giây gần nhất: góc/target, tốc độ/target, P-I-D/output và bốn PWM. Có thể chọn ROLL/PITCH, Pause hoặc Clear. Đây là telemetry 20 Hz của vòng điều khiển 200 Hz; CSV vẫn giữ dữ liệu để phân tích lâu hơn.
+10. Bấm **Start / stop CSV log** để lưu dữ liệu trong Documents/DroneMotionLogs. Log chứa thời gian micro giây ESP32, góc, tốc độ, target, P/I/D, output, độ nghiêng tổng, trạng thái recovery, PWM LF/RF/LR/RR, bão hòa, active và sáu gain đã nhận từ board. Thời gian ESP32 tràn sau khoảng 71 phút; bắt đầu log mới sau reset.
+
+## Hồi phục góc roll lớn trên dây treo
+
+Chỉ dùng phần này sau khi hướng mixer và PID đã đúng ở góc nhỏ. Với dây chủ yếu cho xoay roll: chọn **ROLL**, giữ pitch vật lý gần 0°, target roll/pitch = 0/0, rồi bật **Suspended rig: large-angle recovery** trước Arm. Không bấm **Set firmware level reference** khi drone đang ở −80°; mốc PID phải được đặt lúc khung nằm ngang thật.
+
+Recovery dùng hướng véc-tơ trọng lực thay cho sai số Euler riêng rẽ, giới hạn tốc độ mục tiêu ở ±30°/s và cho phép Arm tới 90° độ nghiêng tổng. Khi chạy, firmware dừng nếu quá 100°. Ở chế độ ROLL, Arm yêu cầu |pitch| ≤10° và khi chạy dừng nếu |pitch| >15°, vì dây hiện tại không cho trục pitch chuyển động tự do. Vì vậy trường hợp roll −80°, pitch gần 0° được hỗ trợ; trường hợp đồng thời roll −80° và pitch −80° không phù hợp với giá treo một trục.
+
+Thuật toán và mô phỏng máy tính đã bao phủ quá trình roll từ −80° về 0°, nhưng gain, lực đẩy, ma sát, trọng tâm và chiều motor phải được đo trên chính bộ drone. Bắt đầu thử lại từ góc nhỏ với gain đã chỉnh, sau đó tăng góc ban đầu theo từng bước; phần mềm không tự chọn gain cho phần cứng.
 
 Gain chỉ lưu RAM, khởi động lại trở về 0. Kiểm tra phản hồi trước mỗi lần thử. Giới hạn nhập: Kp 0–5, Ki 0–2, Kd 0–0.2, dùng dấu chấm thập phân. Đơn vị: góc độ, tốc độ độ/giây, thời gian giây, output duty PWM. Các giới hạn này là giới hạn phần mềm, không phải xác nhận mọi giá trị trong đó đều ổn định.
 
@@ -22,7 +31,7 @@ Vòng tốc độ dùng đạo hàm âm của gyro, lọc thông thấp 10 Hz, g
 
 Phiên bản này không dùng yaw mixer. Roll âm tăng phía phải; pitch âm tăng phía trước. Chế độ ROLL/PITCH chỉ vô hiệu hóa hiệu chỉnh trục còn lại; cả bốn motor vẫn có base duty.
 
-Firmware dừng khi lỗi IMU, góc vượt ±25°, mẫu/dt không hợp lệ, lỗi PWM, mất kết nối Wi-Fi sở hữu hoặc thiếu heartbeat 2 giây. Supervisor độc lập kiểm tra mỗi 50 ms và cắt PWM nếu vòng PID không ghi output trong 100 ms; độ trễ phát hiện tối đa thêm một chu kỳ supervisor. Không tự khởi động motor lại sau khôi phục cảm biến. Giữ lệnh manual và PID loại trừ nhau. Đóng app/Disconnect/Calibrate gửi STOP trước.
+Ở chế độ thường, firmware dừng khi góc vượt ±25°. Ở recovery, giới hạn theo độ nghiêng tổng là 100° cùng giới hạn trục không được phép chuyển động nêu trên. Firmware cũng dừng khi lỗi IMU, mẫu/dt không hợp lệ, lỗi PWM, mất kết nối Wi-Fi sở hữu hoặc thiếu heartbeat 2 giây. Supervisor độc lập kiểm tra mỗi 50 ms và cắt PWM nếu vòng PID không ghi output trong 100 ms; độ trễ phát hiện tối đa thêm một chu kỳ supervisor. Không tự khởi động motor lại sau khôi phục cảm biến. Giữ lệnh manual và PID loại trừ nhau. Đóng app/Disconnect/Calibrate gửi STOP trước.
 
 ## Giao thức
 
@@ -30,6 +39,7 @@ Firmware dừng khi lỗi IMU, góc vượt ±25°, mẫu/dt không hợp lệ, 
 PID SET ROLL <Kp> <Ki> <Kd>
 PID SET PITCH <Kp> <Ki> <Kd>
 CONTROL INFO
+CONTROL RECOVERY <0|1>
 CONTROL ZERO
 CONTROL SETPOINT <rollDeg> <pitchDeg>
 CONTROL ARM
@@ -43,13 +53,14 @@ Axis: 0=BOTH, 1=ROLL, 2=PITCH. START cần ARM cùng kết nối. Gain, ZERO và
 ```text
 PID,ROLL,0.120000,0.040000,0.003000
 STATUS,CONTROL_V1
+STATUS,CONTROL_V2
 STATUS,CONTROL_ARMED
 STATUS,CONTROL_RUNNING
 STATUS,CONTROL_STOPPED
-C,micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active
+C2,micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active,rollRateTarget,pitchRateTarget,rollOutput,pitchOutput,tilt,recovery
 ```
 
-Q vẫn được gửi 100 Hz, C khoảng 10 Hz. HELLO báo tần số lấy mẫu/điều khiển 200 Hz. Dữ liệu C là góc firmware sau mốc ZERO; góc hiển thị mô hình có mốc Zero riêng.
+Q vẫn được gửi 100 Hz, C2 khoảng 20 Hz. HELLO báo tần số lấy mẫu/điều khiển 200 Hz. Dữ liệu C2 là góc firmware sau mốc ZERO; góc hiển thị mô hình có mốc Zero riêng. App vẫn đọc được gói C cũ nhưng các đường rate target/output chỉ có ở C2.
 
 ## Kiểm chứng
 

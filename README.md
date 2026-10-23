@@ -1,8 +1,8 @@
 # MPU6050 3D Motion Viewer
 
-**Cân bằng PID trên đế giữ drone (ESP32):** xem [hướng dẫn PID và chỉnh gain trên WPF](doc/vi/pid-can-bang-tren-de.md). Có chỉnh Kp/Ki/Kd riêng roll/pitch, Arm/Start/Stop, telemetry và CSV. Gain mặc định bằng 0; cần xác minh mapping và chỉnh trên đế trước khi dùng.
+**Cân bằng PID trên đế giữ drone (ESP32):** xem [hướng dẫn PID và chỉnh gain trên WPF](doc/vi/pid-can-bang-tren-de.md). Có chỉnh Kp/Ki/Kd riêng roll/pitch, hồi phục roll góc lớn có chủ đích trên giá treo, đồ thị PID trực tiếp, Arm/Start/Stop, telemetry và CSV. Gain mặc định bằng 0; cần xác minh mapping và chỉnh trên đế trước khi dùng.
 
-**Wi-Fi có hai cách:** nối thẳng laptop vào `DroneMotion_Setup-XXXX` (mật khẩu `drone12345`), trong WPF chọn **Direct ESP32 Wi-Fi** và `192.168.4.1:3333`; hoặc chọn **Router / hotspot** và IP LAN của ESP32. Cách trực tiếp không cần router, điện thoại hoặc Internet. Xem [cách nạp và kết nối Wi-Fi](firmware/WIFI.md).
+**Wi-Fi chỉ dùng Direct:** nối laptop vào `DroneMotion_Setup-XXXX` (mật khẩu `drone12345`), trong WPF bật Wi-Fi và Connect tới `192.168.4.1:3333`. Không cần router, điện thoại, Internet hoặc trang cấu hình. Firmware chỉ chạy AP, không đọc mạng router đã lưu. Xem [cách nạp và kết nối Wi-Fi](firmware/WIFI.md).
 
 **Dùng ESP32 XW_Z1_V2.0:** xem [hướng dẫn nạp và kết nối ESP32](firmware/ESP32.md). Sketch dùng SPI (SCK18/MOSI23/MISO19/CS5), nhận dạng MPU6500 hoặc MPU9250 qua WHO_AM_I. Các bước Nano/I2C bên dưới dành cho Arduino Nano.
 

@@ -39,4 +39,14 @@ public sealed class PidProtocolTests
         Assert.Equal(40, control.Values[13]); Assert.Equal(1, control.Values[18]);
         Assert.Empty(parser.Feed("PID,ROLL,NaN,0,0\nC,1,2,3\n"));
     }
+
+    [Fact]
+    public void ExtendedControlTelemetryIsParsed()
+    {
+        var fields=Enumerable.Range(0,25).Select(n=>n.ToString(CultureInfo.InvariantCulture));
+        var message=Assert.Single(new SerialProtocolParser().Feed($"C2,{string.Join(',',fields)}\n"));
+        var control=Assert.IsType<ControlTelemetryMessage>(message);
+        Assert.Equal(25,control.Values.Length);
+        Assert.Equal(24,control.Values[24]);
+    }
 }

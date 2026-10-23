@@ -2,7 +2,7 @@
 
 Thử riêng 4 động cơ: xem [MotorTest](MotorTest/README.md). Sketch thử độc lập, tự dừng sau tối đa 2 giây; nạp lại sketch cảm biến để dùng app 3D.
 
-**Wi-Fi có hai cách kết nối:** nối laptop vào `DroneMotion_Setup-XXXX`, mật khẩu `drone12345`, trong WPF chọn **Direct ESP32 Wi-Fi** và dùng `192.168.4.1:3333`; hoặc mở `http://192.168.4.1` để cấu hình router, rồi chọn **Router / hotspot** trên WPF và nhập IP LAN của ESP32. Xem [hướng dẫn Wi-Fi](WIFI.md).
+**Wi-Fi Direct:** nối laptop vào `DroneMotion_Setup-XXXX`, mật khẩu `drone12345`, trong WPF bật Wi-Fi và dùng `192.168.4.1:3333`. Firmware chỉ phát AP, không kết nối router và không mở trang cấu hình. Xem [hướng dẫn Wi-Fi](WIFI.md).
 
 Sketch: [DroneMotionMpu6050.ino](DroneMotionMpu6050/DroneMotionMpu6050.ino), kèm `TelemetryOutput.h` cùng thư mục. Giữ tên thư mục cũ để mở lại thuận tiện trong Arduino IDE.
 
@@ -28,7 +28,7 @@ Khi chọn ESP32, sketch dùng SPI theo [sơ đồ bo](../doc/vi/so-do-nguyen-ly
 | 0x00 / 0xFF hoặc phản hồi không ổn định | Dừng, báo MPU_NOT_FOUND |
 | Mã khác, kể cả 0x73 | Dừng, báo MPU_UNSUPPORTED_ID; cần đối chiếu model trước khi bổ sung driver |
 
-SPI chạy 250 kHz, mode 0, có khoảng đệm CS 1 µs trước/sau truyền để đáp ứng thời gian giữ CS của MPU6500. Các thanh ghi cấu hình được đọc lại để xác nhận. IMU, Madgwick và vòng cân bằng chạy ở 200 Hz; quaternion gửi ra 100 Hz. Yaw vẫn có thể trôi vì chưa dùng từ kế. Xem [hướng dẫn cân bằng PID trên đế](../doc/vi/pid-can-bang-tren-de.md) để chỉnh Kp/Ki/Kd trên WPF.
+SPI chạy 250 kHz, mode 0, có khoảng đệm CS 1 µs trước/sau truyền để đáp ứng thời gian giữ CS của MPU6500. Các thanh ghi cấu hình được đọc lại để xác nhận. IMU, Madgwick và vòng cân bằng chạy ở 200 Hz; quaternion gửi ra 100 Hz và telemetry PID mở rộng gửi khoảng 20 Hz. WPF có đồ thị PID trực tiếp và chế độ hồi phục góc lớn tùy chọn cho giá treo. Yaw vẫn có thể trôi vì chưa dùng từ kế. Xem [hướng dẫn cân bằng PID trên đế](../doc/vi/pid-can-bang-tren-de.md) để chỉnh Kp/Ki/Kd trên WPF.
 
 ## Nạp và kiểm tra
 
@@ -36,12 +36,12 @@ SPI chạy 250 kHz, mode 0, có khoảng đệm CS 1 µs trước/sau truyền �
 
 ESP32 dùng **MPU6500/MPU9250 qua SPI**; tên thư mục `DroneMotionMpu6050` được giữ để tương thích. Cập nhật cả firmware (giữ tất cả header cùng thư mục, gồm `GyroCalibration.h`) và app WPF để thấy tiến độ mới.
 
-- Hiệu chuẩn không chặn vòng xử lý USB/Wi-Fi, portal hoặc lệnh STOP/PING/INFO. Kết nối giữa lúc hiệu chuẩn nhận ngay trạng thái hiện tại. Gửi CAL lặp lại không làm mất tiến độ.
+- Hiệu chuẩn không chặn vòng xử lý USB/Wi-Fi hoặc lệnh STOP/PING/INFO. Kết nối giữa lúc hiệu chuẩn nhận ngay trạng thái hiện tại. Gửi CAL lặp lại không làm mất tiến độ.
 - Thu 500 mẫu mới, kiểm tra data-ready. Cửa sổ đứng yên cần ít nhất khoảng 2,5 giây; rung/chuyển động làm bắt đầu lại cửa sổ. Thời gian chờ tối đa 30 giây, sau đó tự thử lại sau 3 giây mà không reset cảm biến đang giao tiếp tốt.
 - Kiểm tra độ biến thiên gyro và vector gia tốc để ước lượng lệch zero. Không còn yêu cầu gyro chưa bù phải dưới 3°/s. Vẫn giới hạn biên độ gyro 15°/s, gia tốc 0,85–1,15 g và độ biến thiên mỗi trục; phải đặt bo trên mặt chắc, hoàn toàn đứng yên. Quay yaw đều chậm vẫn có thể bị nhầm với lệch zero; không hiệu chuẩn khi đang cầm/xoay bo.
 - Giao thức thêm `CAL,<accepted>,500,<reason>` mỗi 500 ms. Reason gồm `COLLECTING`, `MOTION`, `ACCEL_NOT_1G`, `GYRO_OUT_OF_RANGE`, `COMPLETE`. Chỉ gửi READY và Q sau khi hiệu chuẩn thành công. Motor không được khởi động trong lúc hiệu chuẩn.
 - Không có mẫu mới trong 3 giây báo `MPU_NO_FRESH_DATA_RECOVERING` và khởi tạo lại, khác với lỗi giữ chưa yên. Mất phản hồi SPI vẫn báo lỗi cảm biến và không cho chạy cân bằng.
-- Trong chế độ Direct ESP32 Wi-Fi, lỗi ESP32 không vào được router không thay thế trạng thái cảm biến của app; AP vẫn dùng được.
+- Wi-Fi chỉ chạy Direct AP; trạng thái hiệu chuẩn/cảm biến được hiển thị riêng với lỗi kết nối.
 
 Đây là kiểm tra phần mềm; vẫn cần nạp và xác nhận `WHO_AM_I_0x70`, tiến độ CAL, `STATUS,READY`, rồi dòng Q liên tục trên bo thực tế.
 
@@ -93,7 +93,7 @@ Firmware xử lý lệnh giữa các mẫu. Trong lúc hiệu chuẩn, lệnh ch
 
 Giao thức HELLO/STATUS/ERROR/Q và CAL/PING giữ nguyên nên dùng được với bản app đã build, không cần build lại WPF. INFO trả thêm các dòng STATUS mà parser hiện tại đã hỗ trợ.
 
-Sketch có AP để kết nối WPF trực tiếp và cấu hình web, đồng thời hỗ trợ STA để dùng router/hotspot. Cả hai dùng cổng TCP 3333 và chỉ nhận một WPF client. Nạp sketch sẽ thay chương trình đang có trên ESP32.
+Sketch chỉ phát AP để kết nối WPF trực tiếp qua TCP 3333, nhận một WPF client. Wi-Fi router/hotspot và trang cấu hình không hoạt động trong phiên bản này. Nạp sketch sẽ thay chương trình đang có trên ESP32.
 
 ## Nguồn đối chiếu
 

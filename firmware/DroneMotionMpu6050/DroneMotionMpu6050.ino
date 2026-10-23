@@ -488,6 +488,7 @@ void stopControl() { stopControl("CONTROL_STOPPED"); }
 void reportPID() {
 #if defined(ARDUINO_ARCH_ESP32)
   Telemetry.println(F("STATUS,CONTROL_V1"));
+  Telemetry.println(F("STATUS,CONTROL_V2"));
 #endif
   for (int axis=1;axis<=2;axis++) {
     const Flight::Gains &g = axis == 1 ? FlightControl.rollPID.gains : FlightControl.pitchPID.gains;
@@ -517,6 +518,11 @@ void handleCommand(const char *command, bool wifi) {
     const char *text = command+8;
     if (strcmp(text,"STOP")==0) { stopControl(); return; }
     if (strcmp(text,"INFO")==0) { reportPID(); return; }
+    if (strcmp(text,"RECOVERY 0")==0 || strcmp(text,"RECOVERY 1")==0) {
+      if (FlightControl.active || controlArmed || !Motors.idle()) { Telemetry.println(F("ERROR,CONTROL_STOP_FIRST")); return; }
+      FlightControl.recovery = text[9]=='1';
+      Telemetry.println(F("STATUS,CONTROL_RECOVERY_OK")); return;
+    }
     if (!sensorAvailable || !lastControlSample || micros()-lastControlSample > 20000UL) {
       stopControl("CONTROL_SENSOR_NOT_READY"); return;
     }
@@ -745,8 +751,8 @@ void loop() {
   static bool sendPose = false;
   sendPose = !sendPose;
   if (sendPose) sendQuaternion(now);
-  if (now % 100000UL < Config::SamplePeriodMicros) {
-    Telemetry.print(F("C,")); Telemetry.print(now); Telemetry.print(',');
+  if (now % 50000UL < Config::SamplePeriodMicros) {
+    Telemetry.print(F("C2,")); Telemetry.print(now); Telemetry.print(',');
     Telemetry.print(FlightControl.roll,3); Telemetry.print(','); Telemetry.print(FlightControl.pitch,3);
     Telemetry.print(','); Telemetry.print(FlightControl.rollRate,3); Telemetry.print(','); Telemetry.print(FlightControl.pitchRate,3);
     Telemetry.print(','); Telemetry.print(FlightControl.rollTarget,3); Telemetry.print(','); Telemetry.print(FlightControl.pitchTarget,3);
@@ -757,7 +763,13 @@ void loop() {
     }
     for (unsigned duty : FlightControl.duties) { Telemetry.print(','); Telemetry.print(duty); }
     Telemetry.print(','); Telemetry.print(FlightControl.saturated ? 1 : 0);
-    Telemetry.print(','); Telemetry.println(FlightControl.active ? 1 : 0);
+    Telemetry.print(','); Telemetry.print(FlightControl.active ? 1 : 0);
+    Telemetry.print(','); Telemetry.print(FlightControl.rollRateTarget,3);
+    Telemetry.print(','); Telemetry.print(FlightControl.pitchRateTarget,3);
+    Telemetry.print(','); Telemetry.print(FlightControl.rollOutput,3);
+    Telemetry.print(','); Telemetry.print(FlightControl.pitchOutput,3);
+    Telemetry.print(','); Telemetry.print(FlightControl.tilt,3);
+    Telemetry.print(','); Telemetry.println(FlightControl.recovery ? 1 : 0);
   }
 #else
   sendQuaternion(now);

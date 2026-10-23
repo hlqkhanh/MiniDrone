@@ -5,7 +5,7 @@
 #include <lwip/sockets.h>
 #include <errno.h>
 #include "TelemetrySendBuffer.h"
-#include "WifiProvisioner.h"
+#include "DirectWifi.h"
 #if __has_include("WifiConfig.local.h")
 #include "WifiConfig.local.h"
 #else
@@ -43,20 +43,17 @@ class TelemetryOutput : public Print {
 
   void beginWifi() {
 #if defined(ARDUINO_ARCH_ESP32)
-    portal_.begin(*this, WifiConfig::Port);
-    // Bind all interfaces once: the AP is usable even without a router.
-    server_.begin();
+    if (directWifi_.begin(*this, WifiConfig::Port)) server_.begin();
 #endif
   }
 
   void reportWifiInfo() {
 #if defined(ARDUINO_ARCH_ESP32)
-    portal_.report();
+    directWifi_.report(*this);
 #endif
   }
   bool acceptClient() {
 #if defined(ARDUINO_ARCH_ESP32)
-    pollWifi();
     flushWifi();
     auto incoming = server_.accept();
     if (!incoming) return false;
@@ -84,6 +81,12 @@ class TelemetryOutput : public Print {
   TxBuffer tx_;
   void flushWifi() {
     if (!client_.connected()) { tx_.clear(); return; }
+    // Some core versions keep connected() true after a graceful TCP close.
+    // Detect EOF without consuming command bytes so a reconnect can be accepted.
+    uint8_t pending;
+    if (recv(client_.fd(), &pending, 1, MSG_DONTWAIT | MSG_PEEK) == 0) {
+      client_.stop(); tx_.clear(); return;
+    }
     int sendError = 0;
     const auto result = tx_.flush(millis(), [this, &sendError](const uint8_t *bytes, size_t length) {
       const int sent = send(client_.fd(), bytes, length, MSG_DONTWAIT);
@@ -101,29 +104,8 @@ class TelemetryOutput : public Print {
     }
   }
 
-  void pollWifi() {
-    portal_.poll();
-    const bool stationReady = portal_.stationReady();
-    const IPAddress ip = stationReady ? WiFi.localIP() : IPAddress(0, 0, 0, 0);
-    if (stationReady != stationReady_ || ip != localIp_) {
-      // A router reconnect must not revoke a viewer connected to the AP.
-      // Only an obsolete STA socket is closed; the shared listener stays up.
-      if (client_.connected() && client_.localIP() != WiFi.softAPIP()) {
-        client_.stop();
-        tx_.clear();
-      }
-      stationReady_ = stationReady;
-      localIp_ = ip;
-      println(stationReady ? F("STATUS,WIFI_STA_CONNECTED") : F("ERROR,WIFI_DISCONNECTED_RECONNECTING"));
-      reportWifiInfo();
-    }
-    // Reconnection and browser configuration are serviced by the portal.
-  }
-
   NetworkServer server_{WifiConfig::Port};
   NetworkClient client_;
-  bool stationReady_ = false;
-  WifiProvisioner portal_;
-  IPAddress localIp_;
+  DirectWifi directWifi_;
 #endif
 };

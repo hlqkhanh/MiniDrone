@@ -19,8 +19,6 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private bool _useWifi = true;
     private bool _isConnecting;
     private string _wifiHost = "192.168.4.1";
-    private string _wifiMode = "Direct ESP32 Wi-Fi";
-    private string _directHost = "192.168.4.1", _routerHost = "";
     private int _wifiPort = 3333;
     private readonly OrientationService _orientation = new();
     private readonly SensorSession _sensorSession = new();
@@ -58,6 +56,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private string _baseDuty = "40", _rollTarget = "0", _pitchTarget = "0";
     private string _controlStatus = "Requires CONTROL_V1 firmware", _controlData = "No control data";
     private string _appliedPid = "Board gains not received", _controlAxis = "ROLL";
+    private bool _recoveryAvailable, _largeAngleRecovery, _pausePlots;
+    private string _plotAxis="ROLL";
+    public PidHistory PidHistory { get; } = new();
+    public string PlotAxis { get=>_plotAxis; set=>SetProperty(ref _plotAxis,value); }
+    public IReadOnlyList<string> PlotAxes { get; } = ["ROLL","PITCH"];
+    public bool PausePlots { get=>_pausePlots; set { if(SetProperty(ref _pausePlots,value)) PidHistory.IsPaused=value; } }
+    public bool RecoveryAvailable => _recoveryAvailable;
+    public bool LargeAngleRecovery { get=>_largeAngleRecovery; set { SetProperty(ref _largeAngleRecovery,value); CommandManager.InvalidateRequerySuggested(); } }
     private StreamWriter? _controlLog;
     private string _logStatus = "CSV logging off";
 
@@ -100,6 +106,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             finally { SetControlBusy(false); }
         }, () => ControlEditable, ShowError);
         ToggleControlLogCommand = new RelayCommand(ToggleControlLog);
+        ClearPlotsCommand = new RelayCommand(PidHistory.Clear);
         _motorHeartbeat = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _motorHeartbeat.Tick += MotorHeartbeatOnTick;
         _motorHeartbeat.Start();
@@ -112,22 +119,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<int> BaudRates { get; } = [115200, 57600, 38400, 19200, 9600];
 
     public bool CanEditConnection => !IsConnected && !_isConnecting;
-    public IReadOnlyList<string> WifiModes { get; } = ["Direct ESP32 Wi-Fi", "Router / hotspot"];
-    public string WifiMode
-    {
-        get => _wifiMode;
-        set
-        {
-            if (!CanEditConnection || !WifiModes.Contains(value) || value == _wifiMode) return;
-            if (_wifiMode == WifiModes[0]) _directHost = WifiHost; else _routerHost = WifiHost;
-            SetProperty(ref _wifiMode, value);
-            WifiHost = value == WifiModes[0] ? _directHost : _routerHost;
-            OnPropertyChanged(nameof(WifiInstructions));
-        }
-    }
-    public string WifiInstructions => WifiMode == WifiModes[0]
-        ? "Connect laptop to DroneMotion_Setup-XXXX (password: drone12345). Keep connected without Internet. Then Connect to 192.168.4.1:3333."
-        : "Connect laptop and ESP32 to the same router or 2.4 GHz hotspot. Enter the ESP32 IP from the setup page or Serial Monitor.";
+    public string WifiInstructions => "Connect laptop to DroneMotion_Setup-XXXX (password: drone12345). Keep connected without Internet. Then Connect to 192.168.4.1:3333. No router or setup web page needed.";
     public bool UseWifi
     {
         get => _useWifi;
@@ -228,6 +220,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ICommand StartControlCommand { get; }
     public ICommand ZeroControlCommand { get; }
     public ICommand ToggleControlLogCommand { get; }
+    public ICommand ClearPlotsCommand { get; }
     public bool ControlEditable => IsConnected && _controlAvailable && !_stopPending && !_controlBusy && !_controlRunning && !_controlArmed && !_motorRunning;
     public bool RigConfirmed
     {
@@ -330,6 +323,12 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         SetControlBusy(true);
         try
         {
+            if (LargeAngleRecovery && !_recoveryAvailable) throw new InvalidOperationException("Recovery requires CONTROL_V2 firmware");
+            if (_recoveryAvailable) {
+                await RequestControlAsync($"CONTROL RECOVERY {(LargeAngleRecovery ? 1 : 0)}",
+                    m=>m is StatusMessage s && s.Status=="CONTROL_RECOVERY_OK");
+                if (version!=_motorRequestVersion || !IsConnected || !RigConfirmed) return;
+            }
             await RequestControlAsync(FormattableString.Invariant($"CONTROL SETPOINT {roll:G9} {pitch:G9}"),
                 m => m is StatusMessage s && s.Status == "CONTROL_SETPOINT_OK");
             if (version != _motorRequestVersion || !IsConnected || !RigConfirmed) return;
@@ -346,7 +345,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             Directory.CreateDirectory(directory);
             var path = Path.Combine(directory, $"pid-{DateTime.Now:yyyyMMdd-HHmmss-fff}.csv");
             _controlLog = new StreamWriter(path) { AutoFlush = true };
-            _controlLog.WriteLine("micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active,rollKp,rollKi,rollKd,pitchKp,pitchKi,pitchKd");
+            _controlLog.WriteLine("micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active,rollRateTarget,pitchRateTarget,rollOutput,pitchOutput,tilt,recovery,rollKp,rollKi,rollKd,pitchKp,pitchKi,pitchKd");
             LogStatus = path;
         }
         catch (Exception e) { ShowError(e); }
@@ -449,6 +448,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void ResetMotorControls()
     {
+        _recoveryAvailable=false; LargeAngleRecovery=false;
+        OnPropertyChanged(nameof(RecoveryAvailable));
+        PidHistory.Clear();
         _stopPending = false;
         _controlAvailable = _controlRunning = _controlArmed = false;
         _boardPids.Clear(); AppliedPid = "Board gains not received";
@@ -607,11 +609,10 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 CommandManager.InvalidateRequerySuggested();
                 return;
             }
-            // Router failures do not invalidate a working direct AP connection.
+            // Wi-Fi diagnostics are independent of sensor readiness.
             if (message is ErrorMessage wifiError && wifiError.Code.StartsWith("WIFI_", StringComparison.Ordinal))
             {
-                if (UseWifi && WifiMode == WifiModes[0]) return;
-                DeviceStatus = $"Router Wi-Fi: {wifiError.Code}";
+                DeviceStatus = $"Wi-Fi: {wifiError.Code}";
                 return;
             }
             if (message is StatusMessage sensorInfo &&
@@ -632,18 +633,20 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             }
             if (message is ControlTelemetryMessage control)
             {
+                PidHistory.Add(control);
                 var v = control.Values;
                 ControlData = FormattableString.Invariant($"FW angle R {v[1]:F2}° P {v[2]:F2}° | rate {v[3]:F1}/{v[4]:F1}°/s\nTarget {v[5]:F1}/{v[6]:F1}°\nRoll P/I/D {v[7]:F2}/{v[8]:F2}/{v[9]:F2}\nPitch P/I/D {v[10]:F2}/{v[11]:F2}/{v[12]:F2}\nPWM {v[13]}/{v[14]}/{v[15]}/{v[16]} | saturation {v[17]}");
-                try { _controlLog?.WriteLine($"{control.Csv},{CsvGains("ROLL")},{CsvGains("PITCH")}"); } catch (Exception e) { _controlLog?.Dispose(); _controlLog = null; LogStatus = e.Message; }
+                try { _controlLog?.WriteLine($"{control.Csv}{(v.Length==19 ? ",,,,,," : "")},{CsvGains("ROLL")},{CsvGains("PITCH")}"); } catch (Exception e) { _controlLog?.Dispose(); _controlLog = null; LogStatus = e.Message; }
                 return;
             }
             if (message is StatusMessage cs && cs.Status.StartsWith("CONTROL_", StringComparison.Ordinal))
             {
                 if (cs.Status == "CONTROL_STOPPED") _stopPending = false;
                 if (cs.Status == "CONTROL_V1") _controlAvailable = true;
-                else if (cs.Status == "CONTROL_RUNNING") { _controlRunning = true; _controlArmed = false; }
+                else if (cs.Status == "CONTROL_V2") { _controlAvailable=true; _recoveryAvailable=true; OnPropertyChanged(nameof(RecoveryAvailable)); }
+                else if (cs.Status == "CONTROL_RUNNING") { _controlRunning = true; _controlArmed = false; PidHistory.Clear(); }
                 else if (cs.Status == "CONTROL_ARMED") _controlArmed = true;
-                else if (cs.Status is not ("CONTROL_ZEROED" or "CONTROL_SETPOINT_OK")) _controlRunning = _controlArmed = false;
+                else if (cs.Status is not ("CONTROL_ZEROED" or "CONTROL_SETPOINT_OK" or "CONTROL_RECOVERY_OK")) _controlRunning = _controlArmed = false;
                 ControlStatus = cs.Status;
                 OnPropertyChanged(nameof(ControlEditable)); CommandManager.InvalidateRequerySuggested(); return;
             }

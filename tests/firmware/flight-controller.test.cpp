@@ -55,4 +55,38 @@ int main() {
     fc.roll += fc.rollRate*0.005f;
   }
   assert(fabsf(fc.roll)<0.5f && fabsf(fc.rollRate)<0.5f);
+
+  // Large-angle recovery is opt-in. A roll-only rig must keep pitch close to level.
+  Flight::Controller recovery;
+  recovery.rollPID.gains={0.5f,0.01f,0.005f};
+  recovery.pitchPID.gains={0.5f,0.01f,0.005f};
+  const float radians=0.01745329252f;
+  auto setRoll=[&](float degrees,float rate) {
+    float half=-degrees*radians*0.5f;
+    recovery.attitude(cosf(half),0,sinf(half),0,0,-rate*radians);
+  };
+  setRoll(-80,0);
+  assert(!recovery.start(80,1));
+  recovery.recovery=true;
+  assert(recovery.start(80,1));
+  assert(recovery.tilt>79 && recovery.tilt<81);
+  for(int n=0;n<3000;n++) {
+    assert(recovery.update(0.005f));
+    assert(fabsf(recovery.rollRateTarget)<=30.001f);
+    float rate=recovery.rollRate+(recovery.rollOutput*15-recovery.rollRate*2)*0.005f;
+    float angle=recovery.roll+rate*0.005f;
+    setRoll(angle,rate);
+  }
+  assert(fabsf(recovery.roll)<1 && fabsf(recovery.rollRate)<1);
+  for(auto duty:recovery.duties) assert(duty<=220);
+
+  // The selected-axis guards reject motion the test rig cannot provide.
+  recovery.stop();
+  float rollHalf=80*radians*0.5f, pitchHalf=20*radians*0.5f;
+  // q = pitch(X) followed by roll(Y), matching the firmware's mounted axes.
+  recovery.attitude(cosf(pitchHalf)*cosf(rollHalf),
+                    sinf(pitchHalf)*cosf(rollHalf),
+                    cosf(pitchHalf)*sinf(rollHalf),
+                    sinf(pitchHalf)*sinf(rollHalf),0,0);
+  assert(!recovery.start(80,1));
 }
