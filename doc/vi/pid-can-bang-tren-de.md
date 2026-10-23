@@ -53,7 +53,7 @@ STATUS,CONTROL_STOPPED
 C,micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active
 ```
 
-Q vẫn được gửi 100 Hz, C khoảng 10 Hz. HELLO báo tần số lấy mẫu/điều khiển 200 Hz. Dữ liệu C là góc firmware sau mốc ZERO; góc hiển thị mô hình có mốc Zero riêng. Các cột P/I/D trong C là vòng tốc độ, chưa truyền P/I/D vòng góc. Firmware mới báo thêm `STATUS,CONTROL_CASCADE_V2` và gain `PID,ANGLE_ROLL,...`/`PID,ANGLE_PITCH,...`. CSV WPF mới thêm sáu cột gain góc cuối dòng; khi kết nối firmware cũ các cột đó để trống.
+Q vẫn được gửi 100 Hz; C2 mới khoảng 20 Hz phục vụ [đồ thị PID](do-thi-pid.md), app vẫn đọc C cũ khoảng 10 Hz. HELLO báo tần số lấy mẫu/điều khiển 200 Hz. Góc telemetry là góc firmware sau mốc ZERO; mô hình có mốc Zero riêng. Các cột P/I/D là vòng tốc độ, chưa truyền P/I/D vòng góc. Firmware báo `STATUS,CONTROL_CASCADE_V2` và gain `PID,ANGLE_ROLL,...`/`PID,ANGLE_PITCH,...`. C2 thêm tốc độ mục tiêu và output giới hạn của hai trục; CSV thêm bốn cột này trước các cột gain. Sáu cột gain góc vẫn ở cuối dòng; không có gain được board báo thì để trống.
 
 ## Kiểm chứng
 

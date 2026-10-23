@@ -1,5 +1,7 @@
 # Luồng điều khiển, các field và cách đọc giá trị PID trên WPF
 
+Cập nhật đồ thị: app hiện có tab **Live PID plots** và bản tin C2 khoảng 20 Hz, bổ sung tốc độ mục tiêu và output giới hạn. Xem [hướng dẫn đồ thị](do-thi-pid.md). Các ví dụ ảnh bên dưới vẫn giải thích các trường chung của C/C2.
+
 Tài liệu dành cho người mới sử dụng hệ thống Drone. Nội dung đối chiếu firmware và giao diện hiện tại, sau khi đã thêm PID góc, bỏ ngưỡng góc đo khi Start/chạy và đảo chiều motor-side Roll theo thử nghiệm của người dùng.
 
 Nguồn code trong dự án Drone:
@@ -416,7 +418,7 @@ Nút này bật/tắt ghi dữ liệu về máy tính, không phải nút Start/
 
 `CSV logging off` nghĩa là hiện không ghi file. Nó không nói motor đang dừng hay đang chạy.
 
-CSV chứa thời gian ESP32, góc, tốc độ, target, P/I/D vòng tốc độ, duty từng motor, cờ saturation/active và gain đã nhận của cả hai tầng. Chưa có P/I/D vòng góc hoặc tốc độ mục tiêu trong bản tin C hiện tại.
+CSV chứa thời gian ESP32, góc, tốc độ, target, P/I/D vòng tốc độ, duty từng motor, cờ saturation/active và gain đã nhận của cả hai tầng. C2 mới bổ sung tốc độ mục tiêu và output giới hạn của hai trục, trước các cột gain. Với C cũ, bốn cột đó để trống. Chưa có P/I/D vòng góc trong telemetry.
 
 Thời gian `micros` là số micro giây của ESP32, không phải giờ Windows; số 32 bit tràn sau khoảng 71 phút. Đọc log cần xét việc reset/tràn thời gian.
 

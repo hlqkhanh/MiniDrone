@@ -71,7 +71,7 @@ public sealed class BalanceWorkflowTests
                 }
                 else if (line.StartsWith("CONTROL SETPOINT ")) await writer.WriteLineAsync("STATUS,CONTROL_SETPOINT_OK");
                 else if (line == "CONTROL ARM") await writer.WriteLineAsync("STATUS,CONTROL_ARMED");
-                else if (line.StartsWith("CONTROL START ")) await writer.WriteLineAsync("STATUS,CONTROL_RUNNING");
+                else if (line.StartsWith("CONTROL START ")) await writer.WriteLineAsync("STATUS,CONTROL_RUNNING\nC2,10000,1,2,3,4,0,0,1,2,3,4,5,6,40,41,42,43,0,1,10,11,12,13");
                 else if (line == "MOTOR STOP") await writer.WriteLineAsync("STATUS,CONTROL_STOPPED");
             }
         });
@@ -116,6 +116,12 @@ public sealed class BalanceWorkflowTests
             Assert.False(vm.ApplyPidCommand.CanExecute(null));
             vm.StartControlCommand.Execute(null);
             await Until(() => vm.ControlStatus == "CONTROL_RUNNING");
+            await Until(() => vm.PidHistory.Snapshot().Length == 1);
+            Assert.Equal(12, vm.PidHistory.Snapshot()[0].Values[21]);
+            vm.PausePlots = true; Assert.True(vm.PidHistory.IsPaused);
+            vm.PausePlots = false;
+            vm.ClearPlotsCommand.Execute(null);
+            Assert.Empty(vm.PidHistory.Snapshot());
             Assert.False(vm.RunMotorCommand.CanExecute(null));
             vm.StopMotorsCommand.Execute(null);
             await Until(() => vm.ControlEditable);

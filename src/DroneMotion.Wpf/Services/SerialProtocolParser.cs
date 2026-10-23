@@ -79,7 +79,8 @@ public sealed class SerialProtocolParser
                 message = new PidMessage(settings!);
                 return true;
             case "C" when fields.Length == 20:
-                var values = new double[19];
+            case "C2" when fields.Length is 24 or 26:
+                var values = new double[fields.Length - 1];
                 for (var n = 0; n < values.Length; n++)
                     if (!double.TryParse(fields[n + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out values[n]) ||
                         !double.IsFinite(values[n])) return false;

@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:h="http://helix-toolkit.org/wpf"
+        xmlns:controls="clr-namespace:DroneMotion.Wpf.Controls"
         mc:Ignorable="d"
         Title="Drone Motion Viewer"
         Width="1180" Height="720" MinWidth="900" MinHeight="580"
@@ -228,6 +229,8 @@
         </Border>
 
         <Border Grid.Column="2" Background="#0F172A" CornerRadius="12" ClipToBounds="True">
+            <TabControl SelectedIndex="1" Background="#0F172A" BorderThickness="0">
+            <TabItem Header="3D orientation" Foreground="#111827">
             <Grid>
             <h:HelixViewport3D Background="#0F172A"
                                ShowViewCube="True"
@@ -267,6 +270,21 @@
                            HorizontalAlignment="Center" VerticalAlignment="Bottom"
                            Margin="20" Foreground="#E2E8F0" TextWrapping="Wrap" IsHitTestVisible="False"/>
             </Grid>
+            </TabItem>
+            <TabItem Header="Live PID plots" Foreground="#111827">
+                <Grid Background="#0F172A">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <WrapPanel Margin="10" VerticalAlignment="Center">
+                        <TextBlock Text="Plot axis" Foreground="#E2E8F0" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox ItemsSource="{Binding PlotAxes}" SelectedItem="{Binding PlotAxis}" Width="100" Margin="0,0,12,0"/>
+                        <CheckBox Content="Pause plots" IsChecked="{Binding PausePlots}" Foreground="#E2E8F0" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <Button Content="Clear plots" Command="{Binding ClearPlotsCommand}" Margin="0"/>
+                        <TextBlock Text="20 Hz telemetry · 200 Hz controller" Foreground="#94A3B8" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                    </WrapPanel>
+                    <controls:PidPlot Grid.Row="1" History="{Binding PidHistory}" Axis="{Binding PlotAxis}"/>
+                </Grid>
+            </TabItem>
+            </TabControl>
         </Border>
     </Grid>
 </Window>

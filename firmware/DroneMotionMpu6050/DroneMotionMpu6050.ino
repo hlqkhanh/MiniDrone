@@ -754,8 +754,8 @@ void loop() {
   static bool sendPose = false;
   sendPose = !sendPose;
   if (sendPose) sendQuaternion(now);
-  if (now % 100000UL < Config::SamplePeriodMicros) {
-    Telemetry.print(F("C,")); Telemetry.print(now); Telemetry.print(',');
+  if (now % 50000UL < Config::SamplePeriodMicros) {
+    Telemetry.print(F("C2,")); Telemetry.print(now); Telemetry.print(',');
     Telemetry.print(FlightControl.roll,3); Telemetry.print(','); Telemetry.print(FlightControl.pitch,3);
     Telemetry.print(','); Telemetry.print(FlightControl.rollRate,3); Telemetry.print(','); Telemetry.print(FlightControl.pitchRate,3);
     Telemetry.print(','); Telemetry.print(FlightControl.rollTarget,3); Telemetry.print(','); Telemetry.print(FlightControl.pitchTarget,3);
@@ -766,7 +766,11 @@ void loop() {
     }
     for (unsigned duty : FlightControl.duties) { Telemetry.print(','); Telemetry.print(duty); }
     Telemetry.print(','); Telemetry.print(FlightControl.saturated ? 1 : 0);
-    Telemetry.print(','); Telemetry.println(FlightControl.active ? 1 : 0);
+    Telemetry.print(','); Telemetry.print(FlightControl.active ? 1 : 0);
+    Telemetry.print(','); Telemetry.print(FlightControl.rollRateTarget,3);
+    Telemetry.print(','); Telemetry.print(FlightControl.pitchRateTarget,3);
+    Telemetry.print(','); Telemetry.print(FlightControl.rollOutput,3);
+    Telemetry.print(','); Telemetry.println(FlightControl.pitchOutput,3);
   }
 #else
   sendQuaternion(now);

@@ -7,6 +7,20 @@ namespace DroneMotion.Tests;
 public sealed class PidProtocolTests
 {
     [Theory]
+    [InlineData(23)]
+    [InlineData(25)]
+    public void ExtendedPlotTelemetryIsParsed(int length)
+    {
+        var values = Enumerable.Range(0, length).Select(n => n.ToString(CultureInfo.InvariantCulture));
+        var parser = new SerialProtocolParser();
+        Assert.Empty(parser.Feed("C2,"));
+        var control = Assert.IsType<ControlTelemetryMessage>(Assert.Single(parser.Feed(string.Join(',', values) + "\n")));
+        Assert.Equal(length, control.Values.Length);
+        Assert.Equal(19, control.Values[19]);
+        Assert.Equal(22, control.Values[22]);
+        Assert.Empty(parser.Feed("C2,1,NaN\n"));
+    }
+    [Theory]
     [InlineData("ANGLE_ROLL")]
     [InlineData("ANGLE_PITCH")]
     public void OuterLoopGainsRoundTrip(string axis)

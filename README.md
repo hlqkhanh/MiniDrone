@@ -1,5 +1,7 @@
 # MPU6050 3D Motion Viewer
 
+**Đồ thị PID trực tiếp:** xem [tab Live PID plots và telemetry C2](doc/vi/do-thi-pid.md). Hiển thị góc, tốc độ, P/I/D và PWM; hỗ trợ Pause/Clear và giữ lịch sử 30 giây.
+
 **Luồng điều khiển hai tầng mới:** xem [PID góc → PID tốc độ → PWM và cách chỉnh trên WPF](doc/vi/luong-dieu-khien-cascade.md). Firmware báo `CONTROL_CASCADE_V2`; vòng góc chỉnh được độc lập, mặc định 2/0/0, giữ SPI, mapping motor và watchdog của hệ thống Drone.
 
 **Cân bằng PID trên đế giữ drone (ESP32):** xem [hướng dẫn PID và chỉnh gain trên WPF](doc/vi/pid-can-bang-tren-de.md). Có chỉnh Kp/Ki/Kd riêng roll/pitch, Arm/Start/Stop, telemetry và CSV. Gain mặc định bằng 0; cần xác minh mapping và chỉnh trên đế trước khi dùng.

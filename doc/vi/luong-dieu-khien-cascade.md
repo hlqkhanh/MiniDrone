@@ -159,7 +159,7 @@ PID,ANGLE_PITCH,2.000000,0.000000,0.000000
 
 Các giá trị vòng tốc độ trong ví dụ chỉ minh họa định dạng, không phải khuyến nghị tuning. Giới hạn nhập cả hai tầng: Kp 0–5, Ki 0–2, Kd 0–0.2. Đơn vị gain khác nhau giữa hai tầng do đầu vào/đầu ra khác nhau. Gain chỉ lưu RAM.
 
-Giữ nguyên bản tin `C` để không phá parser cũ. Các P/I/D trong `C` và phần ControlData là vòng tốc độ. CSV app mới thêm sáu cột gain góc, nhưng chưa ghi P/I/D từng mẫu của vòng góc hoặc tốc độ mục tiêu. Nếu dùng firmware cũ, các ô gain góc trong CSV trống.
+Telemetry hiện gửi `C2` khoảng 20 Hz, giữ các trường của `C` và thêm tốc độ mục tiêu cùng output giới hạn của hai trục để vẽ [đồ thị PID](do-thi-pid.md). App mới vẫn đọc `C` cũ. Các P/I/D trong telemetry và phần ControlData là vòng tốc độ. CSV giữ sáu cột gain góc và thêm bốn cột telemetry mới; với `C` cũ bốn cột mới để trống. Chưa ghi P/I/D từng mẫu của vòng góc. Nếu firmware không báo gain góc thì các ô gain góc trong CSV trống.
 
 ## 6. Những cơ chế dừng được giữ lại
 

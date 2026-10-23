@@ -61,6 +61,12 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private string _baseDuty = "40", _rollTarget = "0", _pitchTarget = "0";
     private string _controlStatus = "Requires CONTROL_V1 firmware", _controlData = "No control data";
     private string _appliedPid = "Board gains not received", _controlAxis = "ROLL";
+    private bool _pausePlots;
+    private string _plotAxis = "ROLL";
+    public PidHistory PidHistory { get; } = new();
+    public string PlotAxis { get => _plotAxis; set => SetProperty(ref _plotAxis, value); }
+    public IReadOnlyList<string> PlotAxes { get; } = ["ROLL", "PITCH"];
+    public bool PausePlots { get => _pausePlots; set { if (SetProperty(ref _pausePlots, value)) PidHistory.IsPaused = value; } }
     private StreamWriter? _controlLog;
     private string _logStatus = "CSV logging off";
 
@@ -103,6 +109,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             finally { SetControlBusy(false); }
         }, () => ControlEditable, ShowError);
         ToggleControlLogCommand = new RelayCommand(ToggleControlLog);
+        ClearPlotsCommand = new RelayCommand(PidHistory.Clear);
         _motorHeartbeat = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _motorHeartbeat.Tick += MotorHeartbeatOnTick;
         _motorHeartbeat.Start();
@@ -231,6 +238,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public ICommand StartControlCommand { get; }
     public ICommand ZeroControlCommand { get; }
     public ICommand ToggleControlLogCommand { get; }
+    public ICommand ClearPlotsCommand { get; }
     public bool ControlEditable => IsConnected && _controlAvailable && !_stopPending && !_controlBusy && !_controlRunning && !_controlArmed && !_motorRunning;
     public bool RigConfirmed
     {
@@ -372,7 +380,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             Directory.CreateDirectory(directory);
             var path = Path.Combine(directory, $"pid-{DateTime.Now:yyyyMMdd-HHmmss-fff}.csv");
             _controlLog = new StreamWriter(path) { AutoFlush = true };
-            _controlLog.WriteLine("micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active,rollKp,rollKi,rollKd,pitchKp,pitchKi,pitchKd,angleRollKp,angleRollKi,angleRollKd,anglePitchKp,anglePitchKi,anglePitchKd");
+            _controlLog.WriteLine("micros,roll,pitch,rollRate,pitchRate,rollTarget,pitchTarget,rollP,rollI,rollD,pitchP,pitchI,pitchD,LF,RF,LR,RR,saturated,active,rollRateTarget,pitchRateTarget,rollOutput,pitchOutput,rollKp,rollKi,rollKd,pitchKp,pitchKi,pitchKd,angleRollKp,angleRollKi,angleRollKd,anglePitchKp,anglePitchKi,anglePitchKd");
             LogStatus = path;
         }
         catch (Exception e) { ShowError(e); }
@@ -475,6 +483,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void ResetMotorControls()
     {
+        PidHistory.Clear();
         _stopPending = false;
         _controlAvailable = _controlRunning = _controlArmed = false;
         _boardPids.Clear(); AppliedPid = "Board gains not received";
@@ -659,9 +668,14 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             }
             if (message is ControlTelemetryMessage control)
             {
+                PidHistory.Add(control);
                 var v = control.Values;
                 ControlData = FormattableString.Invariant($"FW angle R {v[1]:F2}° P {v[2]:F2}° | rate {v[3]:F1}/{v[4]:F1}°/s\nTarget {v[5]:F1}/{v[6]:F1}°\nRoll P/I/D {v[7]:F2}/{v[8]:F2}/{v[9]:F2}\nPitch P/I/D {v[10]:F2}/{v[11]:F2}/{v[12]:F2}\nPWM {v[13]}/{v[14]}/{v[15]}/{v[16]} | saturation {v[17]}");
-                try { _controlLog?.WriteLine($"{control.Csv},{CsvGains("ROLL")},{CsvGains("PITCH")},{CsvGains("ANGLE_ROLL")},{CsvGains("ANGLE_PITCH")}"); } catch (Exception e) { _controlLog?.Dispose(); _controlLog = null; LogStatus = e.Message; }
+                // Current C2 has 23 values. Legacy C lacks the four plot fields;
+                // upstream C2 may carry two additional recovery fields which we do not use.
+                var csv = v.Length == 25 ? string.Join(',', control.Csv.Split(',').Take(23))
+                    : control.Csv + (v.Length == 19 ? ",,,," : "");
+                try { _controlLog?.WriteLine($"{csv},{CsvGains("ROLL")},{CsvGains("PITCH")},{CsvGains("ANGLE_ROLL")},{CsvGains("ANGLE_PITCH")}"); } catch (Exception e) { _controlLog?.Dispose(); _controlLog = null; LogStatus = e.Message; }
                 return;
             }
             if (message is StatusMessage cs && cs.Status.StartsWith("CONTROL_", StringComparison.Ordinal))
@@ -669,7 +683,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
                 if (cs.Status == "CONTROL_STOPPED") _stopPending = false;
                 if (cs.Status == "CONTROL_V1") _controlAvailable = true;
                 if (cs.Status == "CONTROL_CASCADE_V2") { _cascadeAvailable = true; OnPropertyChanged(nameof(CascadeEditable)); }
-                else if (cs.Status == "CONTROL_RUNNING") { _controlRunning = true; _controlArmed = false; }
+                else if (cs.Status == "CONTROL_RUNNING") { _controlRunning = true; _controlArmed = false; PidHistory.Clear(); }
                 else if (cs.Status == "CONTROL_ARMED") _controlArmed = true;
                 else if (cs.Status is not ("CONTROL_V1" or "CONTROL_ZEROED" or "CONTROL_SETPOINT_OK")) _controlRunning = _controlArmed = false;
                 ControlStatus = cs.Status;
