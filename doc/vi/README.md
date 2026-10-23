@@ -1,5 +1,20 @@
 # Tài liệu tiếng Việt
 
+## Bắt đầu học bộ điều khiển drone
+
+Nếu mới sử dụng, đọc theo thứ tự này để tránh phải hiểu công thức trước khi biết các ô trên app dùng làm gì:
+
+| Thứ tự | Tài liệu | Sau khi đọc, bạn hiểu được gì? |
+|---|---|---|
+| 1 | [Luồng và các field PID trên WPF](huong-dan-field-pid-wpf.md) | Vì sao cần hai vòng PID; từng ô/nút làm gì; đi từ góc lệch đến PWM bằng một ví dụ |
+| 2 | [Cách đọc đồ thị PID](do-thi-pid.md) | Nhìn góc, tốc độ, P/I/D và motor theo đúng thứ tự để giải thích phản ứng |
+| 3 | [Thực hành trên đế](pid-can-bang-tren-de.md) | Chuẩn bị, kiểm tra motor, Apply/Arm/Start/Stop và ghi lại từng lượt thử |
+| 4 | [Luồng kỹ thuật và liên hệ code](luong-dieu-khien-cascade.md) | Công thức, mapping trục, giới hạn, thời gian và giao thức khi cần đọc sâu |
+
+Các ví dụ số để học phép tính không phải bộ gain đã được xác nhận cho mọi phần cứng. Mỗi tài liệu tách rõ lệnh bạn nhập, giá trị board xác nhận và dữ liệu cảm biến gửi về.
+
+## Tài liệu lắp ráp và sơ đồ
+
 Bản dịch từ hai PDF trong thư mục `doc`. Bản gốc được giữ nguyên. Thư mục `assets` chứa các hình trích từ bản gốc để đối chiếu.
 
 | Tài liệu gốc | Bản Markdown tiếng Việt | Bản PDF tiếng Việt |

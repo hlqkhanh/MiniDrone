@@ -1,449 +1,428 @@
-# Luồng điều khiển, các field và cách đọc giá trị PID trên WPF
+# Hiểu bộ điều khiển và các ô PID trên WPF từ đầu
 
-Cập nhật đồ thị: app hiện có tab **Live PID plots** và bản tin C2 khoảng 20 Hz, bổ sung tốc độ mục tiêu và output giới hạn. Xem [hướng dẫn đồ thị](do-thi-pid.md). Các ví dụ ảnh bên dưới vẫn giải thích các trường chung của C/C2.
+Tài liệu này giúp bạn trả lời ba câu hỏi: **drone tự sửa nghiêng như thế nào, vì sao app cần nhiều ô nhập, và phải nhìn số nào để biết nó đang làm gì?** Bạn chưa cần biết lập trình hoặc công thức PID để đọc phần đầu.
 
-Tài liệu dành cho người mới sử dụng hệ thống Drone. Nội dung đối chiếu firmware và giao diện hiện tại, sau khi đã thêm PID góc, bỏ ngưỡng góc đo khi Start/chạy và đảo chiều motor-side Roll theo thử nghiệm của người dùng.
+Đọc tiếp theo thứ tự: tài liệu này → [cách đọc đồ thị](do-thi-pid.md) → [thực hành trên đế](pid-can-bang-tren-de.md). Khi muốn xem công thức và liên hệ code, đọc [luồng kỹ thuật](luong-dieu-khien-cascade.md).
 
-Nguồn code trong dự án Drone:
+## 1. Bắt đầu bằng một việc đơn giản: đưa drone về ngang
 
-- [FlightController.h](../../firmware/DroneMotionMpu6050/FlightController.h): góc, gyro, hai tầng PID, bộ trộn và giới hạn.
-- [DroneMotionMpu6050.ino](../../firmware/DroneMotionMpu6050/DroneMotionMpu6050.ino): đọc IMU, lệnh điều khiển và telemetry.
-- [MainViewModel.cs](../../src/DroneMotion.Wpf/ViewModels/MainViewModel.cs): gửi lệnh, xác nhận gain, điều kiện mở nút và hiển thị số.
-- [MainWindow.xaml](../../src/DroneMotion.Wpf/MainWindow.xaml): các field trên giao diện.
+Giả sử bạn muốn drone nằm ngang, nhưng bên trái đang thấp hơn bên phải. Để sửa, hệ thống phải:
 
-Các ví dụ chỉ giải thích phép tính. Chúng không chứng nhận bộ gain hoặc base duty phù hợp để bay hay thử có lực đẩy.
+1. Biết bạn muốn giữ góc nào: lấy từ **target**, nghĩa là góc mục tiêu.
+2. Biết drone đang nghiêng bao nhiêu: lấy từ **IMU**, tức cụm cảm biến gia tốc và tốc độ quay.
+3. Tính xem cần sửa mạnh bao nhiêu: dùng **PID**, thuật toán điều khiển dựa vào sai lệch và chuyển động.
+4. Tăng lực đẩy bên trái tương đối với bên phải để nâng phía đang thấp.
+5. Đo lại, tính lại và tiếp tục sửa.
 
-## 1. Đọc ảnh giao diện theo ba nhóm
+Việc đo lại sau mỗi lần điều chỉnh gọi là **phản hồi**. Nếu lệnh làm drone nghiêng thêm, chiều phản hồi hoặc vị trí motor có thể đang sai; tăng hệ số PID không giải quyết được lỗi chiều đó.
 
-| Nhóm | Ví dụ trong ảnh | Ý nghĩa |
+Trong hệ thống hiện tại, ESP32 là nơi đọc cảm biến và tính điều khiển. WPF là app máy tính để nhập cấu hình, gửi lệnh và quan sát kết quả. Đóng tab đồ thị không làm vòng PID trên ESP32 biến mất.
+
+## 2. Những từ cần hiểu trước khi nhập số
+
+| Từ trên app | Hiểu đơn giản | Ví dụ |
 |---|---|---|
-| Giá trị đang nhập | Angle Roll 2/0/0; Inner rate Roll 1.7/0/0; Base 90 | Cấu hình nằm trên app, chưa chắc đã được gửi hoặc board chấp nhận |
-| Trạng thái/xác nhận | Board gains not received; Requires CONTROL_V1 firmware | App đã biết gì về kết nối, firmware và gain board |
-| Dữ liệu nhận về | FW angle, rate, P/I/D, PWM, saturation | Kết quả board đã gửi ở một thời điểm |
+| Roll | Nghiêng trái/phải | Trái thấp, phải cao |
+| Pitch | Chúi/ngẩng đầu | Đầu thấp, đuôi cao |
+| Angle | Góc đang nghiêng, đơn vị độ (°) | Lệch 5° so với mốc ngang |
+| Rate | Tốc độ góc đang thay đổi, đơn vị độ/giây (°/s) | Đang quay về ngang với tốc độ 10°/s |
+| Target / setpoint | Giá trị muốn đạt | Góc mục tiêu 0° |
+| Measured | Giá trị cảm biến đo/ước lượng | Góc hiện tại +5° |
+| Error | Sai số: mục tiêu trừ giá trị đo | 0 − 5 = −5° |
+| Gain | Hệ số quyết định độ mạnh của thuật toán | Kp = 2 |
+| PWM / duty | Cách ra lệnh công suất motor bằng bật/tắt nhanh | Duty 90 trên thang 255 |
+| Telemetry | Dữ liệu ESP32 gửi về app | Góc, tốc độ, PWM |
 
-**Không coi con số trong ô nhập là gain chắc chắn đang chạy trên ESP32.** Phải đối chiếu các dòng gain được board xác nhận sau Apply PID hoặc CONTROL INFO.
+**Góc và tốc độ quay cần được phân biệt.** Drone nghiêng 5° và đứng yên có rate gần 0. Drone đi qua vị trí ngang có thể có angle gần 0 nhưng rate rất lớn. Trường hợp thứ hai cần điều chỉnh để giảm tốc, dù nó vừa đi qua đúng góc mục tiêu.
 
-Ảnh đang có đồng thời:
+Theo kiểm tra của người dùng trên bo hiện tại, **FW Roll dương là trái thấp/phải cao**. Đó là quy ước riêng theo cách gắn cảm biến và mốc góc; Pitch cần được kiểm tra riêng trên phần cứng.
+
+## 3. Vì sao cần hai vòng điều khiển?
+
+### 3.1. Muốn về đúng góc, còn phải kiểm soát cách di chuyển
+
+Bạn muốn drone nằm ngang ở **0°**. Cảm biến báo drone đang nghiêng **+5°**. Ta biết cần đưa nó về 0°, nhưng thông tin này còn thiếu một điều: **drone đang đứng yên, đang nghiêng thêm hay đang quay về rất nhanh?**
+
+Hãy tưởng tượng bạn lái xe đến một điểm dừng. Biết còn cách điểm dừng 5 mét chưa đủ để quyết định nhấn ga hay phanh: xe đang đứng yên và xe đang chạy rất nhanh cần xử lý khác nhau. Với drone, góc giống như vị trí cần đạt, còn tốc độ quay cho biết thân drone đang di chuyển nhanh thế nào.
+
+Hệ thống này chia công việc thành hai câu hỏi nối tiếp:
+
+1. **Vòng góc:** “Đang lệch như vậy thì nên quay về với tốc độ bao nhiêu?”
+2. **Vòng tốc độ:** “So với tốc độ đó, hiện tại đang quay thiếu hay thừa? Cần đổi lệnh motor bao nhiêu?”
+
+Hai vòng không phải hai thuật toán độc lập cùng tranh nhau điều khiển motor. **Kết quả vòng góc trở thành mục tiêu của vòng tốc độ.**
+
+### 3.2. Vòng ngoài — nhìn góc để chọn tốc độ cần quay
+
+Tên trên app là **Outer angle PID**. “Outer” nghĩa là vòng ngoài, “angle” nghĩa là góc.
+
+Nó nhận:
+
+- **Góc mục tiêu:** bạn muốn giữ bao nhiêu độ, chẳng hạn 0°.
+- **Góc đo:** firmware ước lượng drone đang nghiêng bao nhiêu, chẳng hạn +5°.
+
+Sau đó tính sai số:
 
 ```text
-Board gains not received
-Requires CONTROL_V1 firmware
+Sai số góc = góc mục tiêu − góc đo
+           = 0 − 5
+           = −5°
 ```
 
-Đây là các trạng thái mặc định mà app cũng đặt lại khi mất kết nối/reset trạng thái điều khiển. Chúng không đủ để kết luận chắc chắn board đã nạp sai firmware.
+Dấu âm nghĩa là cần thay đổi góc về chiều âm để tiến tới mục tiêu. Nó chưa phải lệnh giảm tất cả motor.
 
-Hàm reset hiện xóa xác nhận gain nhưng chưa xóa chuỗi `ControlData`, nên các số FW angle/PWM phía dưới có thể còn từ bản tin trước đó. **Chỉ một ảnh này không xác nhận motor đang chạy hay telemetry còn mới.** Cần xem trạng thái kết nối và sự cập nhật dữ liệu.
+Giả sử vòng góc đang dùng **Kp=2, Ki=0, Kd=0**. Khi ấy:
 
-## 2. Hình dung toàn bộ luồng
+```text
+Tốc độ quay yêu cầu = Kp góc × sai số góc
+                    = 2 × (−5)
+                    = −10°/s
+```
+
+Có thể đọc thành câu: **“Drone đang ở +5°; tôi muốn nó quay về theo chiều âm, với tốc độ yêu cầu là 10 độ mỗi giây.”**
+
+Vòng góc tạo ra một **yêu cầu chuyển động**, chưa tạo duty cho từng motor. Kết quả −10°/s không phải cam kết rằng drone lập tức quay đúng tốc độ đó.
+
+### 3.3. Vòng trong — nhìn gyro để điều chỉnh motor đạt tốc độ đó
+
+Tên trên app là **Inner rate PID**. “Inner” nghĩa là vòng trong, “rate” ở đây là tốc độ quay.
+
+Nó nhận:
+
+- **Tốc độ quay yêu cầu:** kết quả vòng góc, ở ví dụ là −10°/s.
+- **Tốc độ quay đang đo:** lấy từ gyro, là cảm biến đo tốc độ quay.
+
+Nếu drone đang đứng yên, gyro gần **0°/s**:
+
+```text
+Sai số tốc độ = tốc độ yêu cầu − tốc độ đo
+              = −10 − 0
+              = −10°/s
+```
+
+Nghĩa là drone chưa quay về đủ theo yêu cầu. Vòng tốc độ cần tạo hiệu chỉnh để nó bắt đầu quay về.
+
+Chỉ để minh họa phép tính, giả sử vòng tốc độ dùng **Kp=0.2, Ki=0, Kd=0**:
+
+```text
+Hiệu chỉnh Roll = Kp tốc độ × sai số tốc độ
+                = 0.2 × (−10)
+                = −2 duty
+```
+
+Giá trị **−2 duty** được đưa sang bộ trộn motor. Bộ trộn áp dụng chiều Roll hiện tại, cộng/trừ hiệu chỉnh với **Base duty** để tạo bốn lệnh LF/RF/LR/RR. Với mapping đã chỉnh của drone này, tình huống đứng yên ở Roll +5° và target 0° sẽ tăng tương đối phía trái để sửa nghiêng.
+
+Số 0.2 ở đây chỉ để tính dễ, không phải gain đã được xác nhận cho phần cứng.
+
+### 3.4. Cùng nghiêng +5°, tại sao có lúc cần sửa ngược lại?
+
+Giữ nguyên target 0° và PID góc 2/0/0, nên vòng góc vẫn yêu cầu **−10°/s**. Bây giờ xét ba chuyển động khác nhau:
+
+| Góc đo | Tốc độ đo từ gyro | Sai số tốc độ | Vòng tốc độ đang muốn làm gì? |
+|---|---|---|---|
+| +5° | 0°/s | −10 − 0 = −10°/s | Tạo chuyển động quay về |
+| +5° | +5°/s | −10 − 5 = −15°/s | Sửa mạnh hơn vì drone còn đang quay xa mục tiêu |
+| +5° | −20°/s | −10 − (−20) = +10°/s | Giảm tốc quay về vì đang nhanh hơn yêu cầu |
+
+Ở hàng cuối, drone đã quay về theo chiều âm rất nhanh. Tiếp tục thúc nó về mạnh thêm có thể làm nó đi quá góc 0° và nghiêng sang phía còn lại. Vì vậy, vòng tốc độ tạo phần hiệu chỉnh theo chiều dương để **giảm độ lớn tốc độ quay về**.
+
+Điều này giải thích một hiện tượng dễ hiểu nhầm: **drone còn nghiêng nhưng lệnh hiệu chỉnh đã đổi chiều**. Nó có thể đang giảm tốc để đến mục tiêu, không nhất thiết là bộ trộn bị ngược. Muốn kết luận phải xem cả góc, gyro và kết quả PID.
+
+Các phép tính ở bảng chỉ xét phần P. Khi Ki/Kd khác 0, bộ nhớ tích lũy và sự thay đổi giá trị đo cũng góp phần quyết định lệnh cuối.
+
+### 3.5. Khi gần ngang, hai vòng phối hợp ra sao?
+
+Với vòng góc 2/0/0 và target 0°, yêu cầu tốc độ giảm theo độ lệch:
+
+| Góc đang đo | Sai số góc | Tốc độ quay yêu cầu |
+|---|---|---|
+| +5° | −5° | −10°/s |
+| +2° | −2° | −4°/s |
+| +0.5° | −0.5° | −1°/s |
+| 0° | 0° | 0°/s |
+
+Càng gần ngang, vòng góc càng yêu cầu quay chậm lại. Vòng tốc độ liên tục dùng gyro để điều chỉnh theo yêu cầu đang thay đổi đó.
+
+Ngay khi góc vừa bằng 0° mà gyro vẫn báo đang quay, vòng tốc độ vẫn có sai số và tiếp tục yêu cầu hiệu chỉnh. **Muốn giữ ngang, cần vừa đạt góc mục tiêu vừa giảm tốc độ quay về gần 0.** Không phải cứ đi qua 0° là đã cân bằng.
+
+### 3.6. Vì sao không chỉ nhìn góc, hoặc chỉ nhìn tốc độ?
+
+Nếu một thuật toán chỉ dùng góc tức thời mà không xét chuyển động, hai trạng thái cùng +5° ở bảng trên sẽ trông giống nhau. Nó thiếu thông tin để phân biệt cần bắt đầu quay về hay cần giảm tốc quay về.
+
+Nếu chỉ điều khiển tốc độ bằng gyro với mục tiêu 0°/s, drone có thể ngừng quay nhưng vẫn nằm nghiêng ở +5°. Vòng tốc độ không tự biết góc nào được coi là ngang; vòng góc cung cấp mục tiêu đó thông qua yêu cầu chuyển động.
+
+Trong cấu trúc đang dùng:
+
+- **Vòng góc giữ mục tiêu tư thế:** cần tiến đến góc nào và nên quay nhanh bao nhiêu.
+- **Vòng tốc độ điều chỉnh chuyển động:** dùng gyro để biến yêu cầu tốc độ thành phần sửa motor.
+
+Đây là cách tổ chức của firmware hiện tại, không phải khẳng định mọi bộ điều khiển drone đều bắt buộc có cùng cấu trúc. Một thiết kế khác có thể kết hợp góc và tốc độ theo cách khác.
+
+### 3.7. Liên hệ với bốn hàng gain trên app
+
+| Hàng trên app | Bạn đang chỉnh việc gì? | Đầu ra của hàng đó |
+|---|---|---|
+| Angle Roll Kp / Ki / Kd | Cách chọn tốc độ để sửa góc trái/phải | Tốc độ Roll yêu cầu, °/s |
+| Inner rate Roll Kp / Ki / Kd | Cách sửa motor để đạt tốc độ Roll yêu cầu | Hiệu chỉnh Roll, duty |
+| Angle Pitch Kp / Ki / Kd | Cách chọn tốc độ để sửa góc chúi/ngẩng | Tốc độ Pitch yêu cầu, °/s |
+| Inner rate Pitch Kp / Ki / Kd | Cách sửa motor để đạt tốc độ Pitch yêu cầu | Hiệu chỉnh Pitch, duty |
+
+Vì đầu ra khác đơn vị, **Kp góc = 2 và Kp tốc độ = 2 không có cùng ý nghĩa**. Vòng góc mặc định 2/0/0, vòng tốc độ mặc định 0/0/0; không thể coi việc đã có số 2 ở hàng Angle là đã cấu hình đủ lực hiệu chỉnh motor.
+
+Base duty cũng có nhiệm vụ riêng: tạo mức lệnh nền chung cho bốn motor. Hai tầng PID tạo phần chênh lệch cộng/trừ vào nền đó để sửa tư thế.
+
+### 3.8. Sơ đồ luồng và những gì cần nhìn trên đồ thị
 
 ```mermaid
 flowchart TD
-    UI[WPF: nhập gain, target, base và trục] --> CMD[Gửi lệnh và chờ board xác nhận]
-    CMD --> ARM[Arm rồi Start]
-    IMU[IMU qua SPI] --> RAW[Gia tốc và gyro, trừ gyro bias]
-    RAW --> Q[Madgwick: quaternion tư thế]
-    Q --> ANG[Góc Roll/Pitch theo trục thân]
-    RAW --> RATE[Tốc độ quay Roll/Pitch]
-    ANG --> OUTER[PID góc: target góc trừ góc đo]
-    ARM --> OUTER
-    OUTER --> TR[Tốc độ quay yêu cầu, giới hạn ±45 độ/giây]
-    TR --> INNER[PID tốc độ: tốc độ yêu cầu trừ gyro]
-    RATE --> INNER
-    INNER --> CORR[Hiệu chỉnh mỗi trục, giới hạn ±40 duty]
-    CORR --> MIX[Áp dụng chiều Roll/Pitch và trộn với base]
-    MIX --> DUTY[LF/RF/LR/RR, giới hạn 0–220 duty]
-    DUTY --> MOTOR[MotorControl phát PWM]
-    MOTOR --> IMU
-    DUTY --> DATA[Telemetry về WPF và CSV]
+    T[Góc muốn giữ: target] --> E[Sai số góc]
+    IMU[Cảm biến IMU] --> A[Góc đo: measured angle]
+    A --> E
+    E --> O[Vòng góc: chọn tốc độ quay yêu cầu]
+    O --> R[Sai số tốc độ]
+    IMU --> G[Gyro: tốc độ quay đang đo]
+    G --> R
+    R --> I[Vòng tốc độ: tính hiệu chỉnh duty]
+    I --> M[Bộ trộn: áp dụng chiều và cộng với base]
+    B[Base duty: ga nền] --> M
+    M --> D[Bốn lệnh PWM: LF / RF / LR / RR]
+    D --> BODY[Thân drone chuyển động]
+    BODY --> IMU
 ```
-
-Nếu trình đọc không hiển thị Mermaid:
 
 ```text
 Target góc − góc đo
-        ↓ PID góc
-Tốc độ quay yêu cầu − gyro
-        ↓ PID tốc độ
-Hiệu chỉnh Roll/Pitch
-        ↓ áp dụng chiều và trộn với base duty
-PWM cho LF / RF / LR / RR
+        ↓ vòng góc
+Tốc độ quay yêu cầu − tốc độ gyro
+        ↓ vòng tốc độ
+Hiệu chỉnh duty
+        ↓ bộ trộn và base
+Bốn motor → thân drone chuyển động → cảm biến đo lại
 ```
 
-ESP32 tính điều khiển ở mục tiêu 200 Hz, tức khoảng 5 ms mỗi lượt, với dt đo thực tế. WPF gửi cấu hình và hiển thị; app không tính lại PID ở mỗi khung hình 3D.
+Đối chiếu luồng với app:
 
-## 3. Góc, tốc độ quay, gain và duty khác nhau thế nào?
+1. **ANGLE:** đo góc có đang tiến về target không?
+2. **BODY RATE:** tốc độ thực có đang theo tốc độ mà vòng góc yêu cầu không?
+3. **RATE PID:** thuật toán đang tạo hiệu chỉnh mạnh bao nhiêu và có bị giới hạn không?
+4. **MOTOR OUTPUT:** sau khi cộng base và áp dụng bộ trộn, bốn motor nhận lệnh gì?
 
-| Đại lượng | Đơn vị | Ví dụ | Câu hỏi nó trả lời |
+Trong firmware này, mỗi lượt điều khiển chạy vòng góc trước rồi vòng tốc độ, ở nhịp mục tiêu 200 lần/giây. Không phải vòng góc và vòng tốc độ đang được cấu hình ở hai tần số khác nhau. Đồ thị nhận khoảng 20 mẫu/giây để bạn quan sát các kết quả đó.
+
+## 4. Kp, Ki, Kd: vì sao cần ba ô trong một hàng?
+
+Ba ô là ba cách tạo phần hiệu chỉnh khác nhau:
+
+| Ô | Ý nghĩa | Vì sao cần? | Điều cần hiểu khi chỉnh |
 |---|---|---|---|
-| Góc | độ, ° | Roll = +5° | Drone đang nghiêng bao nhiêu? |
-| Tốc độ quay | độ/giây, °/s | Roll rate = −8°/s | Góc đang thay đổi nhanh bao nhiêu và theo chiều nào? |
-| Gain Kp/Ki/Kd | Phụ thuộc tầng PID | Kp góc = 2/s | Bộ điều khiển phản ứng mạnh thế nào? |
-| Duty | Số đếm PWM 8 bit | 90 trên 255 | Lệnh đóng/ngắt công suất motor là bao nhiêu? |
+| Kp | Sửa theo mức sai lệch hiện tại | Sai nhiều cần phản ứng khác sai ít | Quá nhỏ có thể sửa yếu; quá lớn có thể gây dao động hoặc sớm chạm giới hạn |
+| Ki | Sửa theo sai lệch tích lũy qua thời gian | Có sai lệch nhỏ nhưng cứ kéo dài | Có thể bù sai lệch dai dẳng, nhưng tích lũy quá nhiều khiến hồi phục chậm hoặc vượt mục tiêu |
+| Kd | Phản ứng theo thay đổi của giá trị đo | Cần xét chuyển động để điều chỉnh đáp ứng | Có thể hỗ trợ giảm dao động khi phù hợp; cũng nhạy với nhiễu và rung |
 
-Drone có thể nghiêng 5° nhưng đang giữ yên: góc khác 0, tốc độ gần 0. Nó cũng có thể đi qua vị trí ngang rất nhanh: góc gần 0, tốc độ lớn. Đó là lý do hệ thống sử dụng cả góc và gyro.
+Trong code này, D lấy theo thay đổi giá trị đo và được lọc. Không nên hiểu rằng D luôn là một lực phanh cố định.
 
-## 4. Outer angle PID — vòng góc
+**Gain Kp/Ki/Kd là hệ số bạn nhập. P/I/D ở dòng dữ liệu phía dưới là kết quả thuật toán tính ra.** Ví dụ Kp = 1.7 nhưng P có thể = 17, −8 hoặc 111.34 tùy sai số lúc đó.
 
-### 4.1. Angle Roll Kp / Ki / Kd
+Phạm vi app chấp nhận là Kp 0–5, Ki 0–2, Kd 0–0.2. Đây là phạm vi nhập, không có nghĩa mọi bộ số trong đó đều chạy ổn. Dùng dấu chấm thập phân: `1.7`.
 
-Ba ô điều chỉnh vòng góc Roll. Trong ảnh là:
+## 5. Giải thích từng nhóm field: dùng để làm gì và vì sao cần?
+
+### 5.1. Angle Roll / Angle Pitch Kp, Ki, Kd
+
+**Dùng để làm gì:** điều chỉnh cách vòng góc tạo tốc độ quay yêu cầu cho từng trục.
+
+**Vì sao cần:** cùng lệch 5°, bạn có thể muốn sửa nhẹ hoặc nhanh hơn. Hai trục có thể phản ứng khác nhau do khối lượng, bố trí motor và đế, nên có hàng Roll/Pitch riêng.
+
+Mặc định là **2 / 0 / 0**. Sau reset, chỉ phần P hoạt động:
 
 ```text
-Kp = 2     Ki = 0     Kd = 0
+Muốn 0°, đang +5° → sai số −5°
+Kp góc = 2 → tốc độ yêu cầu = −10°/s
 ```
 
-Vòng này lấy sai số góc và tạo **tốc độ quay yêu cầu**:
+Số **2 là hệ số**, không phải góc thử 2°. Đầu ra vòng góc bị giới hạn ±45°/s để lệnh tốc độ không tăng mãi theo sai số. Đây là giới hạn tốc độ yêu cầu; nó không chặn góc đo ở ±45°.
+
+### 5.2. Inner rate Roll / Inner rate Pitch Kp, Ki, Kd
+
+**Dùng để làm gì:** điều chỉnh cách vòng tốc độ biến chênh lệch tốc độ thành lệnh sửa motor.
+
+**Vì sao cần:** yêu cầu quay −10°/s chưa nói được motor phải tăng/giảm bao nhiêu. Cần nhìn gyro để biết hiện đang quay quá chậm, quá nhanh hay sai chiều.
+
+Ví dụ tốc độ yêu cầu −10°/s nhưng gyro gần 0:
 
 ```text
-errorAngle = targetAngle − measuredAngle
-targetRate = PID_góc(errorAngle)
+Sai số tốc độ = −10 − 0 = −10°/s
+Nếu Kp tốc độ = 1.7 → phần P = −17 duty
 ```
 
-| Hệ số | Tác dụng | Khi bằng 0 |
+Vòng tốc độ mặc định **0 / 0 / 0** sau reset board, nên chưa thể Start trục đó. Số 1.7 ở ví dụ chỉ để dễ tính, không phải bộ gain khuyến nghị cho phần cứng.
+
+Khi mới tìm hiểu hệ thống, giữ vòng góc 2/0/0 giúp giảm số biến phải thay đổi cùng lúc. Các hàng Inner rate là nơi quan sát và chỉnh đáp ứng tốc độ trước; xem quy trình ở [hướng dẫn trên đế](pid-can-bang-tren-de.md).
+
+### 5.3. Base duty
+
+**Dùng để làm gì:** ga nền chung cho cả bốn motor trước khi cộng/trừ hiệu chỉnh.
+
+**Vì sao cần:** PID tạo chênh lệch giữa các motor để sửa góc. Drone còn cần một mức công suất chung để motor tạo lực; phần này được tách khỏi các gain điều khiển.
+
+Ảnh đặt base = 90. Trên thang 0–255, nó tương đương khoảng `90/255 × 100 = 35.3%` duty. Đó không phải 90%, RPM hay % lực nâng. Quan hệ giữa duty và lực đẩy thực tế không được đo trong chương trình này.
+
+Base cho nhập **1–180**. Lệnh cuối từng motor có thể lớn hơn 180 vì còn cộng phần sửa; giới hạn motor cuối là **0–220**. Không có một số base chung đúng cho mọi pin, motor và đế.
+
+### 5.4. Roll / pitch target °
+
+**Dùng để làm gì:** nhập góc muốn giữ. `0 / 0` yêu cầu nằm ngang theo mốc firmware.
+
+**Vì sao cần:** bộ điều khiển phải biết mục tiêu để tính sai số. Nó không thể tự suy ra rằng mọi thử nghiệm đều muốn 0°.
+
+Target +5° nghĩa là muốn giữ +5°, không phải thông báo rằng drone hiện đang nghiêng +5°. Góc đang đo nằm ở dòng **FW angle** phía dưới.
+
+Target giới hạn **−10° đến +10°**. Góc đo được thì không còn bị từ chối Start chỉ vì vượt ±10°, cũng không tự dừng do vượt ±25°. Cho phép chạy ở góc lớn không chứng minh bộ điều khiển hồi phục được từ mọi tư thế.
+
+### 5.5. ROLL / PITCH / BOTH
+
+**Dùng để làm gì:** chọn trục được tham gia điều khiển.
+
+**Vì sao cần:** thử riêng một trục giúp bạn biết thay đổi nào đang tạo ra phản ứng, trước khi ghép cả hai.
+
+| Chọn | Điều khiển | Điểm dễ nhầm |
 |---|---|---|
-| Kp | Sai góc càng nhiều thì yêu cầu quay sửa càng nhanh | Không có phần sửa theo sai số tức thời |
-| Ki | Tích lũy sai góc kéo dài để bù | Không tích lũy phần I mới sau reset |
-| Kd | Phản ứng theo sự thay đổi góc đo, hỗ trợ điều chỉnh chuyển động khi tuning phù hợp | Không đóng góp phần D |
+| ROLL | Chỉ sửa nghiêng trái/phải | Cả bốn motor vẫn có base; cảm biến Pitch vẫn đo |
+| PITCH | Chỉ sửa chúi/ngẩng | Không phải chỉ chạy motor trước/sau |
+| BOTH | Sửa cả hai trục | Lệnh Roll/Pitch cùng đi vào bộ trộn |
 
-Với 2/0/0, sau reset, vòng góc đang dùng P:
+Ô **Plot axis** ở tab đồ thị chỉ chọn dữ liệu để nhìn. Nó độc lập với ô chọn trục điều khiển này.
 
-```text
-target = 0°
-measured = +5°
-error = 0 − 5 = −5°
-targetRate = 2 × (−5) = −10°/s
-```
+## 6. Các nút: vì sao tách thành nhiều bước?
 
-**Số 2 là hệ số, không phải yêu cầu thử nghiêng 2°.** Nó tương đương tạo khoảng 2 độ/giây tốc độ yêu cầu cho mỗi độ sai lệch, trước giới hạn.
+| Nút/ô | Việc nó làm | Vì sao cần bước riêng? |
+|---|---|---|
+| Apply PID | Gửi các gain xuống ESP32, chờ phản hồi | Tránh việc đang gõ số mà gain trên board thay đổi từng ký tự |
+| Set firmware level reference | Lấy tư thế hiện tại làm mốc 0° cho PID | Xác định thế nào là ngang cho phép tính điều khiển |
+| Rig secured; motor mapping and correction direction verified | Bạn xác nhận đế, thứ tự motor và chiều phản hồi đã được kiểm tra | App không tự biết các điều kiện lắp ráp này |
+| Arm balance | Chuẩn bị quyền chạy, chưa bắt đầu PID ra motor | Tách bước xác nhận sẵn sàng khỏi bước chạy |
+| Start balance | Bắt đầu điều khiển và xuất PWM | Đây là lúc motor nhận lệnh theo PID |
+| STOP / DISARM | Dừng motor, hủy Arm, xóa bộ nhớ PID | Không giữ lượng I và lịch sử điều khiển của lượt chạy trước |
 
-### 4.2. Angle Pitch Kp / Ki / Kd
+Mốc ngang chỉ đặt khi dừng/disarm và tư thế thô trong ±10°. Hãy đặt drone ngang trước khi dùng. Nút **Zero orientation** của mô hình 3D chỉ đổi mốc hiển thị; nó không đặt mốc PID.
 
-Ý nghĩa giống Roll nhưng áp dụng cho chúi/ngẩng đầu. Ảnh cũng là 2/0/0.
+Sau Arm, cần Start trong **15 giây** từ cùng nguồn kết nối USB/Wi-Fi. Một trục được chọn cần Kp vòng góc và Kp vòng tốc độ lớn hơn 0. Sau khi đã Arm/chạy, các field cấu hình được khóa; hãy Stop trước khi đổi và Apply lại.
 
-Khi chọn ROLL, vòng Pitch bị vô hiệu hóa trong tính điều khiển, dù các ô gain Pitch vẫn có giá trị.
+Sửa ô target chưa gửi ngay xuống board; app gửi target trong quy trình Arm. Base được gửi khi Start. Vì vậy, việc thấy số trong ô nhập chưa xác nhận board đã dùng số đó.
 
-### 4.3. Giới hạn ±45°/s có nghĩa gì?
+## 7. Đi hết luồng bằng một ví dụ duy nhất
 
-Đó là giới hạn **tốc độ quay yêu cầu do vòng góc tạo ra**. Nó không phải giới hạn góc nghiêng và không bảo đảm tốc độ thực tế không vượt quá 45°/s.
+Giả sử **board đã xác nhận** cấu hình dưới đây và dữ liệu cảm biến hợp lệ. Đây là ví dụ toán học, không phải cấu hình đã thử ổn định:
 
-Ví dụ target=0°, đo=−30°, Kp=2:
-
-```text
-errorAngle = +30°
-P góc = +60°/s
-targetRate sau giới hạn = +45°/s
-```
-
-Đóng góp I của vòng góc còn có giới hạn riêng ±10°/s.
-
-## 5. Inner rate PID — vòng tốc độ quay
-
-### 5.1. Inner rate Roll Kp / Ki / Kd
-
-Trong ảnh là:
-
-```text
-Kp = 1.7     Ki = 0     Kd = 0
-```
-
-Vòng này so sánh tốc độ yêu cầu từ vòng góc với tốc độ gyro đo:
-
-```text
-errorRate = targetRate − measuredRate
-correctionDuty = PID_tốc_độ(errorRate)
-```
-
-| Hệ số | Tác dụng |
+| Đại lượng | Giá trị |
 |---|---|
-| Kp | Đổi sai số tốc độ tức thời thành phần hiệu chỉnh duty |
-| Ki | Bù sai số tốc độ tồn tại lâu bằng phần tích lũy |
-| Kd | Phản ứng với thay đổi tốc độ gyro, có lọc đạo hàm 10 Hz trong code |
+| Trục điều khiển | ROLL |
+| Target | 0° |
+| Góc Roll đo | +5°: trái đang thấp |
+| Tốc độ Roll đo | 0°/s: đang giữ yên |
+| PID góc | 2 / 0 / 0 |
+| PID tốc độ | 1.7 / 0 / 0 |
+| Base | 90 |
 
-Với Kp=1.7, mỗi sai số 1°/s tạo 1.7 duty từ phần P, trước giới hạn.
+**Bước 1 — cần sửa bao nhiêu góc?** `0 − 5 = −5°`.
 
-Ví dụ độc lập để dễ tính, giả sử board đã xác nhận gain trên:
+**Bước 2 — nên quay nhanh bao nhiêu?** Vòng góc yêu cầu `2 × (−5) = −10°/s`.
+
+**Bước 3 — đang quay thiếu bao nhiêu?** Gyro đang 0, nên sai số tốc độ là `−10 − 0 = −10°/s`.
+
+**Bước 4 — tạo phần sửa motor.** Vòng tốc độ tạo `1.7 × (−10) = −17 duty`. I và D bằng 0; −17 vẫn nằm trong giới hạn ±40.
+
+**Bước 5 — phân bổ cho các motor.** Code hiện đảo chiều đóng góp Roll ở bộ trộn bằng `RollMotorDirection = −1`, nên phần dùng để trộn là `−1 × (−17) = +17`:
 
 ```text
-target góc = 0°
-góc đo = −5°
-Outer Kp = 2
-→ tốc độ yêu cầu = +10°/s
-
-gyro đo = −3°/s
-→ sai số tốc độ = 10 − (−3) = +13°/s
-
-Inner Kp = 1.7
-→ P tốc độ = 1.7 × 13 = +22.1 duty
+LF, trái trước = 90 + 17 = 107
+RF, phải trước = 90 − 17 = 73
+LR, trái sau   = 90 + 17 = 107
+RR, phải sau   = 90 − 17 = 73
 ```
 
-Các số dương/âm thể hiện chiều theo quy ước cảm biến/thân, không tự biểu diễn motor nào được tăng. Việc phân bổ motor diễn ra ở bộ trộn.
+Phía trái đang thấp nhận lệnh lớn hơn phía phải để tạo mô-men sửa nghiêng, với điều kiện motor đúng vị trí và lực đẩy đúng. Sau đó IMU đo lại, và lượt tính tiếp theo sử dụng trạng thái mới.
 
-### 5.2. Inner rate Pitch Kp / Ki / Kd
+**Vì sao không luôn tăng phía thấp trong mọi thời điểm?** Nếu góc vẫn +5° nhưng drone đang quay về ngang quá nhanh, chẳng hạn rate −20°/s, vòng góc vẫn chỉ yêu cầu −10°/s. Khi ấy sai số tốc độ là `−10 − (−20) = +10°/s`: bộ điều khiển đổi chiều phần sửa để giảm tốc quay về, hạn chế vượt qua mục tiêu. Muốn hiểu phản ứng phải xem cả angle và rate.
 
-Ý nghĩa giống Roll nhưng cho trục Pitch. Ảnh nhập 1.7/0/0, nhưng đang chọn ROLL nên điều khiển Pitch không tham gia trong chế độ đó.
+## 8. Phân biệt ba nơi có thể thấy một con số
 
-Không có cơ sở từ ảnh để khẳng định 1.7 là gain đã tuning tốt. Khi sai số tốc độ lớn, mức này có thể khiến output sớm chạm giới hạn ±40 duty.
+| Nơi hiển thị | Bạn biết được gì? | Bạn chưa biết được gì? |
+|---|---|---|
+| Ô nhập Inner Kp = 1.7 | App đang giữ giá trị bạn nhập | Board đã nhận 1.7 hay chưa |
+| Dòng xác nhận ROLL: P=1.7 I=0 D=0 | Board đã báo gain 1.7/0/0 | Phản ứng thực tế đã ổn định hay chưa |
+| Dòng Roll P/I/D = 111.34/0/0 | Kết quả tính tức thời vòng tốc độ | Lệnh cuối motor, vì còn giới hạn và bộ trộn |
 
-Giới hạn nhập gain hiện tại áp dụng cho cả hai tầng:
+**Board gains not received** nghĩa là app chưa có xác nhận gain trong trạng thái hiện tại. **Board gains acknowledged** nghĩa là đã nhận phản hồi. Gain chỉ lưu RAM: reset board trả vòng góc về 2/0/0, vòng tốc độ về 0/0/0.
 
-| Ô | Phạm vi được phần mềm chấp nhận |
+## 9. Đọc các dòng dữ liệu phía dưới
+
+| Field | Cách hiểu | Vì sao cần xem? |
+|---|---|---|
+| FW angle R / P | Góc Roll/Pitch firmware đang dùng, đơn vị ° | Xác định sai góc và chiều nghiêng thực tế theo mốc PID |
+| rate R / P | Tốc độ quay Roll/Pitch đo bởi gyro, đơn vị °/s | Phân biệt đang đứng yên, quay về hay quay xa mục tiêu |
+| Target R / P | Mục tiêu mà board báo về | Kiểm tra mục tiêu thực trên board |
+| Roll P/I/D | Ba đóng góp tức thời vòng tốc độ Roll | Nhìn phần nào đang chi phối hiệu chỉnh |
+| Pitch P/I/D | Tương tự cho Pitch | Chọn ROLL thì Pitch không được cập nhật điều khiển; sau reset các phần này bằng 0 |
+| PWM LF/RF/LR/RR | Lệnh cuối bốn motor theo đúng thứ tự trái trước/phải trước/trái sau/phải sau | Kiểm tra bộ trộn đã yêu cầu motor nào tăng/giảm |
+| saturation | Có lệnh motor vượt 0–220 trước khi bị cắt hay không | Phát hiện bộ trộn không còn đáp ứng đủ phần hiệu chỉnh |
+
+FW là viết tắt của firmware. Chữ **P trong “FW angle ... P ...” là Pitch**; chữ P trong “Roll P/I/D” là phần tỷ lệ của PID.
+
+Giá trị PWM là lệnh đã tính, không có cảm biến xác nhận motor thực sự quay đúng tốc độ. Các góc, rate và PWM trên app cũng cần là dữ liệu mới thì mới dùng để đánh giá hiện trạng.
+
+## 10. Tại sao P = 111.34 mà PWM chỉ là 50/130/50/130?
+
+Giả sử base trên board là 90 và đang chọn ROLL. Vòng tốc độ có tổng P+I+D = +111.34, nhưng output được giới hạn ở **+40**:
+
+```text
+P + I + D = 111.34 + 0 + 0
+Output sau giới hạn = +40
+Phần Roll dùng trộn = −40, do RollMotorDirection = −1
+
+LF/LR = 90 − 40 = 50
+RF/RR = 90 + 40 = 130
+```
+
+`saturation=0` vẫn đúng: 50 và 130 chưa vượt phạm vi motor 0–220. Cờ này chỉ nói về bộ trộn, chưa nói PID có chạm ±40 hay vòng góc có chạm ±45°/s không. Xem đường **Output limited** trên [đồ thị PID](do-thi-pid.md) để quan sát giới hạn vòng tốc độ.
+
+**Vì sao cần nhiều giới hạn?** Mỗi tầng có đầu ra khác nhau: vòng góc giới hạn tốc độ yêu cầu, vòng tốc độ giới hạn phần sửa duty, và bộ trộn giới hạn lệnh cuối từng motor.
+
+| Giới hạn hiện tại | Ý nghĩa |
 |---|---|
-| Kp | 0–5 |
-| Ki | 0–2 |
-| Kd | 0–0.2 |
+| Target góc ±10° | Giới hạn mục tiêu người dùng nhập |
+| Vòng góc output ±45°/s; I ±10°/s | Giới hạn lệnh tốc độ và phần tích lũy góc |
+| Vòng tốc độ output ±40 duty; I ±20 duty | Giới hạn phần sửa trước bộ trộn |
+| Base nhập 1–180 | Phạm vi ga nền |
+| Motor cuối 0–220 | Phạm vi xuất lệnh từng motor |
 
-Dùng dấu chấm thập phân, ví dụ `1.7`. Đây là phạm vi kiểm tra đầu vào, không phải phạm vi gain đã được chứng minh ổn định. Cùng một con số ở hai tầng có ý nghĩa khác nhau vì đầu ra vòng góc là độ/giây còn đầu ra vòng tốc độ là duty.
+## 11. Vì sao số cũ có thể vẫn hiện khi nút bị khóa?
 
-### 5.3. Công thức PID đang dùng
+**Requires CONTROL_V1 firmware** là nhãn khi app chưa xác nhận khả năng điều khiển, và cũng được đặt lại khi reset trạng thái kết nối. Nó không tự chứng minh board đã nạp sai firmware.
 
-```text
-P = Kp × error
-I_candidate = I_trước + Ki × (error + error_trước) × dt / 2
-D_raw = −(giá_trị_đo − giá_trị_đo_trước) / dt
-D_lọc += dt / (dt + 0.0159155) × (D_raw − D_lọc)
-D = Kd × D_lọc
-output = giới_hạn(P + I + D)
-```
+Code hiện xóa xác nhận gain khi reset kết nối nhưng chưa xóa chuỗi telemetry phía dưới. Vì vậy, app có thể đồng thời hiện “Board gains not received” và các số góc/PWM từ lần nhận trước. Không dùng riêng các số đó để khẳng định motor đang chạy.
 
-Mẫu đầu không tạo xung D và khởi tạo bước I theo sai số hiện tại. I chỉ cập nhật khi cơ chế chống tích lũy cho phép. D lấy theo giá trị đo để thay đổi target không tự tạo xung D do bước nhảy target.
+Với ảnh đã trao đổi, nếu giả sử Outer Kp=2, Inner Kp=1.7, I=D=0 thật sự đã được áp dụng, góc −22.68° và rate −29.2°/s cùng một lượt tính sẽ cho P khoảng `1.7 × [45 − (−29.2)] = 126.14`, không phải 111.34. Cần gain đã xác nhận và CSV mới để đối chiếu; không ghép ô nhập chưa xác nhận với telemetry cũ thành một phép tính chắc chắn.
 
-Vòng tốc độ giới hạn I ở ±20 duty, tổng output ở ±40 duty. **P riêng lẻ vẫn có thể lớn hơn 40.**
+## 12. Bắt đầu quan sát theo đúng thứ tự
 
-## 6. Apply PID và gain đã xác nhận
+1. Kết nối và chờ sensor READY; xác nhận số liệu đang cập nhật.
+2. Khi dừng, chọn trục, nhập cấu hình và Apply PID; đối chiếu gain board phản hồi.
+3. Xác định mốc ngang đúng. Xác minh thứ tự motor và chiều phản hồi với cánh đã tháo trước khi thử có lực đẩy trên đế.
+4. Xác nhận đế, Arm rồi Start trong 15 giây. Chỉ Start sau khi hiểu base và phản ứng motor của phần cứng.
+5. Xem **ANGLE** trước để biết có về mục tiêu không; sau đó xem **BODY RATE**, **RATE PID**, **MOTOR OUTPUT** để giải thích vì sao.
+6. **Start / stop CSV log** ghi dữ liệu ra file trong Documents/DroneMotionLogs. Nút này và Pause/Clear đồ thị không dừng motor. Dùng **STOP / DISARM** để dừng.
+7. Sau Stop, đổi một nhóm thông số mỗi lần và ghi lại kết quả để có thể so sánh.
 
-### Apply PID
+Phần mềm hiện chưa giữ độ cao, vị trí hoặc hướng Yaw tuyệt đối. Gain trên đế chưa chứng minh dùng được khi bay tự do, và chiều Pitch vẫn cần được xác minh riêng.
 
-Nút này gửi các gain xuống ESP32. App mới và firmware cascade trao đổi bốn bộ: ROLL, PITCH, ANGLE_ROLL, ANGLE_PITCH. App chờ xác nhận phù hợp cho từng bộ trước khi tiếp tục.
+## 13. Muốn tìm các phép tính trong code ở đâu?
 
-Sửa ô nhập không tự cập nhật gain trên board. Chỉ Apply khi đã dừng/disarm; không sửa gain trong lúc điều khiển đang chạy.
-
-### Board gains not received
-
-Chưa có xác nhận gain trong trạng thái hiện tại của app. Không có nghĩa gain trên ESP32 chắc chắn bằng 0. Board có thể vẫn giữ cấu hình cũ trong RAM, hoặc app chưa lấy được thông tin sau kết nối.
-
-### ROLL: P=... I=... D=... và ANGLE_ROLL: P=... I=... D=...
-
-Đây là **hệ số gain board đã báo về**, không phải P/I/D tức thời. Trong dòng xác nhận này chữ P/I/D được dùng làm nhãn ngắn cho Kp/Ki/Kd.
-
-### Board gains acknowledged (RAM; reset restores defaults)
-
-Board đã báo gain về. Gain đang lưu RAM; reset trả về mặc định: vòng góc 2/0/0, vòng tốc độ 0/0/0. App vẫn có thể giữ các giá trị nhập trước đó, nên phải đối chiếu xác nhận mới.
-
-## 7. Base duty
-
-Ảnh đặt **90**, trên thang duty 0–255. Phần trăm duty tương ứng:
-
-```text
-90 / 255 × 100 ≈ 35.3%
-```
-
-Đây là ga nền cộng vào cả bốn motor, trước các phần hiệu chỉnh. **90 không phải 90%, không phải RPM và không phải lực nâng đo được.**
-
-Field cho nhập 1–180. Motor sau bộ trộn có thể lớn hơn 180, vì giới hạn cuối là 0–220 duty. PWM phần cứng chạy ở 20 kHz, độc lập với nhịp PID 200 Hz.
-
-Base quá thấp có thể không tạo đủ lực để thắng ma sát/khối lượng trên đế. Base cao làm lực đẩy và phản ứng thực tế lớn hơn. Code không đo lực đẩy để tự chọn base phù hợp.
-
-## 8. Roll / pitch target °
-
-Hai ô này là góc mong muốn, đơn vị độ. Ảnh đặt:
-
-```text
-Roll target = 0°
-Pitch target = 0°
-```
-
-Tức là muốn giữ ngang theo mốc firmware. Target +5° yêu cầu giữ một góc nghiêng +5°, thay vì trở về 0°.
-
-Target hiện được giới hạn ±10°. Đây là giới hạn **lệnh mục tiêu**, khác với góc đo: điều kiện chặn Start ±10° và ngắt khi đo vượt ±25° đã được bỏ theo yêu cầu trước đó. Đổi target không cần thiết để xử lý việc drone đang nghiêng ±20°.
-
-## 9. ROLL / PITCH / BOTH
-
-| Lựa chọn | Vòng đang điều khiển | Những gì vẫn chạy |
-|---|---|---|
-| ROLL | Hai tầng Roll | Cảm biến đo cả hai trục; cả bốn motor có base |
-| PITCH | Hai tầng Pitch | Cảm biến đo cả hai trục; cả bốn motor có base |
-| BOTH | Hai tầng của cả hai trục | Bộ trộn kết hợp Roll và Pitch |
-
-Chọn ROLL không có nghĩa chỉ chạy hai motor. Nó chỉ loại bỏ hiệu chỉnh Pitch.
-
-## 10. Mốc góc, xác nhận đế và các nút chạy
-
-| Field/nút | Chức năng | Điều kiện hoặc lưu ý |
-|---|---|---|
-| Set firmware level reference | Lấy tư thế hiện tại làm mốc góc PID | Chỉ khi dừng/disarm và tư thế thô trong ±10°; đặt drone ngang trước khi dùng |
-| Rig secured; motor mapping and correction direction verified | Xác nhận người dùng đã cố định đế và kiểm tra thứ tự/chiều hiệu chỉnh | App không tự đo để xác minh; bỏ tích lúc Arm/chạy yêu cầu Stop |
-| Arm balance | Chuẩn bị quyền chạy điều khiển | Cần firmware hỗ trợ, sensor sẵn sàng, xác nhận đế và gain phù hợp đã nhận |
-| Start balance | Bắt đầu PID và xuất PWM | Sau Arm, trong 15 giây, cùng nguồn kết nối USB/Wi-Fi |
-| STOP / DISARM | Dừng motor và hủy Arm | Reset bộ nhớ cả hai tầng PID; vẫn giữ target cấu hình |
-
-Nút `Zero orientation` của mô hình 3D đổi mốc hiển thị. Nó không thay mốc điều khiển như `Set firmware level reference`.
-
-Một trục được chọn cần Kp góc và Kp tốc độ lớn hơn 0. Các field chỉnh gain/base/target bị khóa khi chưa có trạng thái phù hợp, đang gửi lệnh, đã Arm hoặc đang chạy. Vì vậy, màu xám không chỉ có một nguyên nhân.
-
-Luồng nút thông thường:
-
-```text
-Kết nối → READY và nhận thông tin firmware/gain
-       → nhập cấu hình → Apply PID → kiểm tra phản hồi
-       → xác nhận đế → Arm → Start
-       → quan sát hoặc ghi CSV → Stop
-```
-
-## 11. Cách đọc từng dòng telemetry trong ảnh
-
-### 11.1. FW angle R −22.68° P −1.79°
-
-- `FW` = giá trị mà firmware đang dùng cho PID.
-- `R` = Roll; góc trong bản tin là −22.68°.
-- `P` = Pitch; góc trong bản tin là −1.79°. Chữ P ở đây không phải thành phần P của PID.
-- Góc đã trừ mốc ZERO firmware, không nhất thiết giống góc của mô hình đã Zero orientation riêng.
-
-Theo xác nhận của người dùng, Roll dương là trái thấp/phải cao. Với cùng mốc đó, Roll âm là chiều ngược lại. Phải xét mốc đã đặt khi diễn giải tư thế thực tế.
-
-### 11.2. rate −29.2 / −20.5 °/s
-
-Hai số lần lượt là tốc độ quay Roll và Pitch do gyro cung cấp sau đổi trục/đơn vị. Đây không phải tốc độ motor và không phải góc nghiêng.
-
-Ví dụ Roll rate âm nghĩa là Roll đang thay đổi về phía âm theo quy ước hiện tại. Có thể góc vẫn âm nhưng rate dương: drone đang quay về phía ngang hoặc đi qua nó. PID dùng cả hai đại lượng để quyết định hiệu chỉnh.
-
-### 11.3. Target 0.0 / 0.0°
-
-Góc mục tiêu Roll/Pitch mà firmware báo trong bản tin đó. Đây là trạng thái mục tiêu của board, nên hữu ích hơn việc chỉ nhìn các ô nhập khi kiểm tra board đã nhận gì.
-
-### 11.4. Roll P/I/D 111.34 / 0.00 / 0.00
-
-Đây là **các phần đóng góp tức thời của PID tốc độ Roll**, không phải gain:
-
-```text
-Pterm = 111.34 duty
-Iterm =   0.00 duty
-Dterm =   0.00 duty
-Tổng trước giới hạn = 111.34 duty
-Output sau giới hạn ±40 = +40 duty
-```
-
-Con số 111.34 không có nghĩa Kp=111.34, góc=111.34° hoặc motor nhận duty=111.34. Nó là một bước tính trung gian.
-
-### 11.5. Pitch P/I/D 0.00 / 0.00 / 0.00
-
-Chọn ROLL thì vòng Pitch không cập nhật để điều khiển, nên ngay sau Start/reset các đóng góp này bằng 0. Điều đó không chứng minh cảm biến Pitch không hoạt động; dòng FW angle và rate vẫn có dữ liệu Pitch.
-
-### 11.6. PWM 50 / 130 / 50 / 130
-
-Thứ tự luôn là:
-
-| Giá trị | Motor | GPIO | Duty tương đương |
-|---|---|---|---|
-| 50 | LF — trái trước | 14 | Khoảng 19.6% |
-| 130 | RF — phải trước | 15 | Khoảng 51.0% |
-| 50 | LR — trái sau | 12 | Khoảng 19.6% |
-| 130 | RR — phải sau | 13 | Khoảng 51.0% |
-
-Các phần trăm chỉ là duty PWM, không phải % tốc độ hoặc lực đẩy thực tế. Bản tin PWM báo giá trị lệnh, không đo được motor có quay đúng hay không.
-
-### 11.7. saturation 0
-
-Trong code hiện tại, cờ này chỉ cho biết **lệnh motor sau bộ trộn có vượt 0–220 duty hay không**:
-
-- `0`: không có motor vượt phạm vi này trong lượt tính đó.
-- `1`: ít nhất một lệnh motor vượt và bị cắt về giới hạn.
-
-Nó chưa báo riêng việc PID tốc độ chạm ±40 hoặc vòng góc chạm ±45. Vì vậy, **P lớn hơn 40, output PID bị giới hạn, nhưng saturation vẫn bằng 0 là hoàn toàn có thể xảy ra**.
-
-## 12. Ghép P=111.34 và PWM=50/130 thành một ví dụ
-
-Trong code hiện tại:
-
-```text
-RollMotorDirection = −1
-PitchMotorDirection = +1
-
-motorRoll = −rollOutput
-motorPitch = pitchOutput
-
-LF = base + motorRoll − motorPitch
-RF = base − motorRoll − motorPitch
-LR = base + motorRoll + motorPitch
-RR = base − motorRoll + motorPitch
-```
-
-Nếu base board đang dùng là 90, tổng Roll P/I/D là +111.34 và chế độ ROLL:
-
-```text
-rollOutput  = giới_hạn(+111.34, −40, +40) = +40
-pitchOutput = 0
-motorRoll   = −40
-motorPitch  = 0
-
-LF = 90 − 40 = 50
-RF = 90 + 40 = 130
-LR = 90 − 40 = 50
-RR = 90 + 40 = 130
-```
-
-Cả bốn lệnh đều trong 0–220, nên `saturation=0`. Đây là phép tính phù hợp với nhóm số P/I/D và PWM đang thấy trong ảnh, nếu board sử dụng base=90 và firmware có chiều Roll mới.
-
-Với Roll âm và target 0°, thành phần P của vòng góc yêu cầu quay về chiều dương. Trong cấu hình đã sửa, output Roll dương tăng phía phải. Chiều này phù hợp việc sửa nghiêng phải khi mapping motor đúng như người dùng xác nhận cho Roll.
-
-**Không thể ghép chính xác tất cả số trong ảnh thành một trạng thái đã được xác nhận.** Ví dụ, nếu giả sử board thực sự có Outer Kp=2, Inner Kp=1.7, I=D=0, dùng góc −22.68° và rate −29.2°/s của cùng một lượt tính:
-
-```text
-tốc độ yêu cầu = giới_hạn(2 × 22.68, −45, +45) = +45°/s
-sai số tốc độ = 45 − (−29.2) = 74.2°/s
-P tốc độ = 1.7 × 74.2 = 126.14 duty
-```
-
-Kết quả không phải 111.34. Sai khác này không thể giải thích chỉ bằng làm tròn hiển thị; cần lấy gain board đã xác nhận và log mới để kiểm tra. Ảnh đang báo chưa nhận gain, nên không được coi 1.7 trong ô nhập là gain chắc chắn tạo ra dòng telemetry đó.
-
-## 13. Trạng thái firmware thường gặp
-
-| Trạng thái | Cách hiểu |
+| File | Nội dung cần đọc |
 |---|---|
-| Requires CONTROL_V1 firmware | App chưa xác nhận khả năng điều khiển trong trạng thái hiện tại; cũng là nhãn mặc định sau reset trạng thái |
-| CONTROL_V1 | Board báo hỗ trợ giao thức điều khiển nền |
-| CONTROL_CASCADE_V2 | Board báo hỗ trợ chỉnh gain vòng góc riêng |
-| CONTROL_ARMED | Đã Arm, chờ Start |
-| CONTROL_RUNNING | Board xác nhận đã Start điều khiển |
-| CONTROL_STOPPED | Đã dừng/disarm |
-| CONTROL_INVALID_OR_NOT_ARMED | Lệnh điều khiển không hợp lệ trong trạng thái hiện tại, có thể chưa Arm/hết hạn/sai nguồn hoặc tham số không hợp lệ |
-| CONTROL_TIMING_FAULT | dt điều khiển không hợp lệ |
-| CONTROL_ATTITUDE_FAULT | Góc hoặc tốc độ quay không hợp lệ |
-| CONTROL_SATURATION_LIMIT | Mixer vượt giới hạn kéo dài quá 0.5 giây |
+| [FlightController.h](../../firmware/DroneMotionMpu6050/FlightController.h) | `attitude()` đổi góc/gyro; `PID.update()` tính P/I/D; `Controller.update()` nối hai tầng và trộn motor |
+| [DroneMotionMpu6050.ino](../../firmware/DroneMotionMpu6050/DroneMotionMpu6050.ino) | Đọc IMU, nhận lệnh, gửi C2 và quaternion |
+| [MainViewModel.cs](../../src/DroneMotion.Wpf/ViewModels/MainViewModel.cs) | Apply, chờ xác nhận, Arm/Start/Stop, CSV và trạng thái nút |
+| [MainWindow.xaml](../../src/DroneMotion.Wpf/MainWindow.xaml) | Vị trí và nhãn các ô nhập/nút |
 
-Các dòng thông tin có thể ghi đè lên nhãn trạng thái chung. Cần đối chiếu kết nối, phản hồi lệnh và telemetry mới thay vì chỉ nhìn một dòng chữ.
-
-## 14. Start / stop CSV log
-
-Nút này bật/tắt ghi dữ liệu về máy tính, không phải nút Start/Stop motor. File lưu trong thư mục Documents/DroneMotionLogs của người dùng Windows.
-
-`CSV logging off` nghĩa là hiện không ghi file. Nó không nói motor đang dừng hay đang chạy.
-
-CSV chứa thời gian ESP32, góc, tốc độ, target, P/I/D vòng tốc độ, duty từng motor, cờ saturation/active và gain đã nhận của cả hai tầng. C2 mới bổ sung tốc độ mục tiêu và output giới hạn của hai trục, trước các cột gain. Với C cũ, bốn cột đó để trống. Chưa có P/I/D vòng góc trong telemetry.
-
-Thời gian `micros` là số micro giây của ESP32, không phải giờ Windows; số 32 bit tràn sau khoảng 71 phút. Đọc log cần xét việc reset/tràn thời gian.
-
-## 15. Bảng phân biệt các số hay bị nhầm
-
-| Số/nhãn | Nó thực sự là gì? | Không suy ra được điều gì? |
-|---|---|---|
-| Angle Kp=2 | Gain biến sai số góc thành tốc độ yêu cầu | Không phải góc thử 2° |
-| Inner Kp=1.7 | Gain biến sai số tốc độ thành hiệu chỉnh duty | Không chứng minh là gain phù hợp phần cứng |
-| Base=90 | Ga nền theo duty 0–255 | Không phải 90% và không bảo đảm đủ lực cân bằng |
-| Target=0° | Góc muốn giữ theo mốc firmware | Không phải yêu cầu tắt motor |
-| Roll P=111.34 | Phần P tức thời của PID tốc độ | Không phải Kp hoặc duty cuối motor |
-| PWM=130 | Lệnh duty cho một motor | Không phải tốc độ quay hoặc lực đẩy đo được |
-| saturation=0 | Mixer không vượt 0–220 trong bản tin đó | Không chứng minh hai tầng PID chưa chạm giới hạn |
-| Ô gain trên app | Giá trị người dùng đang nhập/giữ lại | Không chứng minh ESP32 đã nhận giá trị ấy |
-| Telemetry còn hiển thị | Bản tin đã được app nhận trước đó | Không tự chứng minh dữ liệu còn mới hoặc motor đang chạy |
-
-## 16. Cách đọc một lần thử cho đúng
-
-1. Xác nhận kết nối và dữ liệu mới đang cập nhật.
-2. Chờ sensor READY và thông tin firmware hỗ trợ.
-3. Khi dừng, nhập cấu hình, Apply rồi đối chiếu gain board đã báo.
-4. Phân biệt góc mục tiêu, góc đo và tốc độ quay trước khi giải thích chiều hiệu chỉnh.
-5. Khi đọc P/I/D, nhớ đây là vòng tốc độ và tổng còn phải qua giới hạn ±40.
-6. Tính tiếp chiều mixer và base để hiểu PWM LF/RF/LR/RR.
-7. Dùng CSV để theo dõi cả quá trình, thay vì suy ra độ ổn định từ một ảnh.
-
-Phần mềm chỉ tính và gửi lệnh. Đúng dấu phép tính chưa chứng minh motor đúng vị trí, lực đẩy đúng chiều hoặc drone đã ổn định. Kiểm tra đầu ra trên bàn cần tháo cánh; việc đánh giá cân bằng phải thực hiện trên đế phù hợp.
+Chi tiết tích phân, đạo hàm, watchdog và bản tin nằm ở [luồng kỹ thuật](luong-dieu-khien-cascade.md). Bạn có thể để phần đó đọc sau khi đã hiểu ví dụ ở mục 7.

@@ -1,5 +1,20 @@
 # Áp dụng luồng điều khiển Angle Mode vào hệ thống Drone
 
+Tài liệu này là phần đọc sâu để đối chiếu thuật toán với code. Nếu mới bắt đầu, hãy đọc [luồng và các field](huong-dan-field-pid-wpf.md), [đồ thị](do-thi-pid.md) rồi [thực hành trên đế](pid-can-bang-tren-de.md) trước. Không cần nhớ các thanh ghi hoặc công thức ở đây để hiểu cách dùng app.
+
+## Từ giao diện đến code: mỗi khối giải quyết một việc
+
+| Khối trong luồng | Việc cần giải quyết | Giá trị chính |
+|---|---|---|
+| Cấu hình trên WPF | Người dùng muốn giữ tư thế nào và phản ứng mạnh thế nào? | Target, gain, base và trục |
+| Đọc IMU, ước lượng tư thế | Drone đang ở đâu và chuyển động thế nào? | Góc và tốc độ quay |
+| PID góc | Cần quay với tốc độ bao nhiêu để tới góc mục tiêu? | Tốc độ yêu cầu |
+| PID tốc độ | Đổi lệnh motor bao nhiêu để đạt tốc độ đó? | Hiệu chỉnh duty |
+| Bộ trộn motor | Phân bổ hiệu chỉnh và ga nền cho từng vị trí ra sao? | LF/RF/LR/RR |
+| Telemetry và đồ thị | Người dùng có thể quan sát nguyên nhân và kết quả thế nào? | Dữ liệu đo và các bước tính |
+
+IMU là cụm cảm biến gia tốc và tốc độ quay. SPI là giao tiếp giữa ESP32 và IMU. Madgwick là thuật toán kết hợp hai nhóm dữ liệu cảm biến; quaternion là cách lưu tư thế trong tính toán. App hiển thị góc Roll/Pitch dễ đọc sau khi firmware đổi từ tư thế đó sang góc theo trục thân. Telemetry là dữ liệu board gửi về máy tính.
+
 ## 1. Kết quả thay đổi
 
 Hệ thống dùng luồng **ước lượng tư thế → PID góc → PID tốc độ → trộn lệnh → PWM động cơ**. Cấu trúc hai tầng lấy ý tưởng từ `ESP32-Flight-controller--main`, nhưng giữ giao tiếp, đơn vị và mapping phù hợp bo XW_Z1_V2.0 của dự án Drone.
@@ -45,7 +60,7 @@ flowchart TD
     Limit --> PWM[MotorControl ghi PWM]
     PWM --> Sample
     Estimate --> View[Quaternion tới WPF 100 Hz]
-    Limit --> Log[Telemetry điều khiển khoảng 10 Hz, CSV]
+    Limit --> Log[Telemetry điều khiển khoảng 20 Hz, CSV]
     Guard[Supervisor độc lập: heartbeat và tuổi output] --> Stop[Dừng PWM khi lỗi hoặc hết hạn]
     PWM --> Guard
 ```
@@ -120,7 +135,7 @@ RR = base − motorRoll + motorPitch
 
 Người dùng xác nhận trái thấp/phải cao cho FW Roll dương, trong khi mixer cũ làm drone nghiêng trái thêm. Vì vậy đã đảo riêng chiều Roll tại motor bằng `RollMotorDirection=-1`. Giữ nguyên dấu góc và gyro, giữ Pitch ở `+1` vì chưa có xác nhận thực tế Pitch bị ngược.
 
-Ví dụ base=80, rollCorrection=−3, pitchCorrection=0 → motorRoll=+3 → LF/LR=83, RF/RR=77. Với target 0°, sai số Roll dương ở trạng thái đứng yên tạo output PID âm khi chỉ có P, nên phía trái đang thấp được tăng lực đẩy. Khi drone đang quay hoặc I/D khác 0, dấu hiệu chỉnh còn phụ thuộc các thành phần đó. Cần xác nhận trên board và đế rằng đầu ra LF/LR/RF/RR đúng vị trí và tạo lực đẩy đúng. Phép tính đúng không chứng minh chiều lực đẩy thực tế đúng.
+Ví dụ base=80, rollCorrection=−3, pitchCorrection=0 → motorRoll=+3 → LF/LR=83, RF/RR=77. Với target 0°, góc đo Roll dương ở trạng thái đứng yên tạo sai số góc âm và output PID âm khi chỉ có P, nên phía trái đang thấp được tăng lực đẩy. Khi drone đang quay hoặc I/D khác 0, dấu hiệu chỉnh còn phụ thuộc các thành phần đó. Cần xác nhận trên board và đế rằng đầu ra LF/LR/RF/RR đúng vị trí và tạo lực đẩy đúng. Phép tính đúng không chứng minh chiều lực đẩy thực tế đúng.
 
 Kiểm tra không gắn cánh: chọn ROLL, target 0°, I/D bằng 0, nghiêng trái giữ yên rồi đối chiếu PWM LF/LR lớn hơn RF/RR; nghiêng phải thì ngược lại. Nếu góc quá nhỏ, lệnh có thể bị lượng tử hóa về cùng duty. Kiểm tra Pitch riêng; chưa được xem là đã sửa hoặc xác minh chiều Pitch.
 
