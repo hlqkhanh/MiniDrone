@@ -205,7 +205,7 @@ Bốn motor → thân drone chuyển động → cảm biến đo lại
 1. **ANGLE:** đo góc có đang tiến về target không?
 2. **BODY RATE:** tốc độ thực có đang theo tốc độ mà vòng góc yêu cầu không?
 3. **RATE PID:** thuật toán đang tạo hiệu chỉnh mạnh bao nhiêu và có bị giới hạn không?
-4. **MOTOR OUTPUT:** sau khi cộng base và áp dụng bộ trộn, bốn motor nhận lệnh gì?
+4. **MOTORS:** sau khi cộng base và áp dụng bộ trộn, bốn motor nhận lệnh gì?
 
 Trong firmware này, mỗi lượt điều khiển chạy vòng góc trước rồi vòng tốc độ, ở nhịp mục tiêu 200 lần/giây. Không phải vòng góc và vòng tốc độ đang được cấu hình ở hai tần số khác nhau. Đồ thị nhận khoảng 20 mẫu/giây để bạn quan sát các kết quả đó.
 
@@ -221,7 +221,7 @@ Ba ô là ba cách tạo phần hiệu chỉnh khác nhau:
 
 Trong code này, D lấy theo thay đổi giá trị đo và được lọc. Không nên hiểu rằng D luôn là một lực phanh cố định.
 
-**Gain Kp/Ki/Kd là hệ số bạn nhập. P/I/D ở dòng dữ liệu phía dưới là kết quả thuật toán tính ra.** Ví dụ Kp = 1.7 nhưng P có thể = 17, −8 hoặc 111.34 tùy sai số lúc đó.
+**Gain Kp/Ki/Kd là hệ số bạn nhập. P/I/D trên khung RATE PID là kết quả thuật toán tính ra.** Ví dụ Kp = 1.7 nhưng P có thể = 17, −8 hoặc 111.34 tùy sai số lúc đó.
 
 Phạm vi app chấp nhận là Kp 0–5, Ki 0–2, Kd 0–0.2. Đây là phạm vi nhập, không có nghĩa mọi bộ số trong đó đều chạy ổn. Dùng dấu chấm thập phân: `1.7`.
 
@@ -275,7 +275,7 @@ Base cho nhập **1–180**. Lệnh cuối từng motor có thể lớn hơn 180
 
 **Vì sao cần:** bộ điều khiển phải biết mục tiêu để tính sai số. Nó không thể tự suy ra rằng mọi thử nghiệm đều muốn 0°.
 
-Target +5° nghĩa là muốn giữ +5°, không phải thông báo rằng drone hiện đang nghiêng +5°. Góc đang đo nằm ở dòng **FW angle** phía dưới.
+Target +5° nghĩa là muốn giữ +5°, không phải thông báo rằng drone hiện đang nghiêng +5°. Góc đang đo nằm ở **Measured** trong khung **ANGLE** của trục đang xem.
 
 Target giới hạn **−10° đến +10°**. Góc đo được thì không còn bị từ chối Start chỉ vì vượt ±10°, cũng không tự dừng do vượt ±25°. Cho phép chạy ở góc lớn không chứng minh bộ điều khiển hồi phục được từ mọi tư thế.
 
@@ -355,19 +355,18 @@ Phía trái đang thấp nhận lệnh lớn hơn phía phải để tạo mô-m
 
 **Board gains not received** nghĩa là app chưa có xác nhận gain trong trạng thái hiện tại. **Board gains acknowledged** nghĩa là đã nhận phản hồi. Gain chỉ lưu RAM: reset board trả vòng góc về 2/0/0, vòng tốc độ về 0/0/0.
 
-## 9. Đọc các dòng dữ liệu phía dưới
+## 9. Đọc dữ liệu trên từng biểu đồ
 
 | Field | Cách hiểu | Vì sao cần xem? |
 |---|---|---|
-| FW angle R / P | Góc Roll/Pitch firmware đang dùng, đơn vị ° | Xác định sai góc và chiều nghiêng thực tế theo mốc PID |
-| rate R / P | Tốc độ quay Roll/Pitch đo bởi gyro, đơn vị °/s | Phân biệt đang đứng yên, quay về hay quay xa mục tiêu |
-| Target R / P | Mục tiêu mà board báo về | Kiểm tra mục tiêu thực trên board |
-| Roll P/I/D | Ba đóng góp tức thời vòng tốc độ Roll | Nhìn phần nào đang chi phối hiệu chỉnh |
-| Pitch P/I/D | Tương tự cho Pitch | Chọn ROLL thì Pitch không được cập nhật điều khiển; sau reset các phần này bằng 0 |
-| PWM LF/RF/LR/RR | Lệnh cuối bốn motor theo đúng thứ tự trái trước/phải trước/trái sau/phải sau | Kiểm tra bộ trộn đã yêu cầu motor nào tăng/giảm |
-| saturation | Có lệnh motor vượt 0–220 trước khi bị cắt hay không | Phát hiện bộ trộn không còn đáp ứng đủ phần hiệu chỉnh |
+| ANGLE: Measured | Góc trục đang chọn mà firmware đang dùng, đơn vị ° | Xác định sai góc và chiều nghiêng thực tế theo mốc PID |
+| BODY RATE: Measured | Tốc độ quay trục đang chọn đo bởi gyro, đơn vị °/s | Phân biệt đang đứng yên, quay về hay quay xa mục tiêu |
+| ANGLE: Target | Mục tiêu góc mà board báo về | Kiểm tra mục tiêu thực trên board |
+| RATE PID: P/I/D | Ba đóng góp tức thời vòng tốc độ của trục đang xem | Nhìn phần nào đang chi phối hiệu chỉnh; xem Pitch khi chỉ chạy Roll sẽ thấy trục không hoạt động |
+| MOTORS: LF/RF/LR/RR | Lệnh cuối bốn motor theo đúng thứ tự trái trước/phải trước/trái sau/phải sau | Kiểm tra bộ trộn đã yêu cầu motor nào tăng/giảm |
+| MOTORS: MIXER CLIPPED | Có lệnh motor vượt 0–220 trước khi bị cắt | Phát hiện bộ trộn không còn đáp ứng đủ phần hiệu chỉnh |
 
-FW là viết tắt của firmware. Chữ **P trong “FW angle ... P ...” là Pitch**; chữ P trong “Roll P/I/D” là phần tỷ lệ của PID.
+FW là viết tắt của firmware. Ở các ảnh giao diện cũ, **P trong “FW angle ... P ...” là Pitch**; chữ P trong P/I/D là phần tỷ lệ của PID. Bản mới ghi rõ trục ở tên biểu đồ. Đổi **Plot axis** để xem Roll hoặc Pitch; thao tác này không đổi trục điều khiển motor.
 
 Giá trị PWM là lệnh đã tính, không có cảm biến xác nhận motor thực sự quay đúng tốc độ. Các góc, rate và PWM trên app cũng cần là dữ liệu mới thì mới dùng để đánh giá hiện trạng.
 
@@ -384,7 +383,7 @@ LF/LR = 90 − 40 = 50
 RF/RR = 90 + 40 = 130
 ```
 
-`saturation=0` vẫn đúng: 50 và 130 chưa vượt phạm vi motor 0–220. Cờ này chỉ nói về bộ trộn, chưa nói PID có chạm ±40 hay vòng góc có chạm ±45°/s không. Xem đường **Output limited** trên [đồ thị PID](do-thi-pid.md) để quan sát giới hạn vòng tốc độ.
+`saturation=0` vẫn đúng: 50 và 130 chưa vượt phạm vi motor 0–220. Cờ này chỉ nói về bộ trộn, chưa nói PID có chạm ±40 hay vòng góc có chạm ±45°/s không. Xem đường **Output** trên [đồ thị PID](do-thi-pid.md) để quan sát giới hạn vòng tốc độ.
 
 **Vì sao cần nhiều giới hạn?** Mỗi tầng có đầu ra khác nhau: vòng góc giới hạn tốc độ yêu cầu, vòng tốc độ giới hạn phần sửa duty, và bộ trộn giới hạn lệnh cuối từng motor.
 
@@ -400,7 +399,7 @@ RF/RR = 90 + 40 = 130
 
 **Requires CONTROL_V1 firmware** là nhãn khi app chưa xác nhận khả năng điều khiển, và cũng được đặt lại khi reset trạng thái kết nối. Nó không tự chứng minh board đã nạp sai firmware.
 
-Code hiện xóa xác nhận gain khi reset kết nối nhưng chưa xóa chuỗi telemetry phía dưới. Vì vậy, app có thể đồng thời hiện “Board gains not received” và các số góc/PWM từ lần nhận trước. Không dùng riêng các số đó để khẳng định motor đang chạy.
+Bản app mới xóa cả xác nhận gain, telemetry và cấu hình board khi ngắt kết nối hoặc nhận HELLO mở phiên mới. Khi vẫn kết nối nhưng quá 2 giây không nhận C/C2, dòng **Control telemetry** báo **STALE**: các số bên dưới là mẫu cuối để xem lại, trạng thái chạy hiện tại chưa xác định. Đây là tuổi dữ liệu điều khiển, độc lập với dữ liệu hình 3D.
 
 Với ảnh đã trao đổi, nếu giả sử Outer Kp=2, Inner Kp=1.7, I=D=0 thật sự đã được áp dụng, góc −22.68° và rate −29.2°/s cùng một lượt tính sẽ cho P khoảng `1.7 × [45 − (−29.2)] = 126.14`, không phải 111.34. Cần gain đã xác nhận và CSV mới để đối chiếu; không ghép ô nhập chưa xác nhận với telemetry cũ thành một phép tính chắc chắn.
 
@@ -410,7 +409,7 @@ Với ảnh đã trao đổi, nếu giả sử Outer Kp=2, Inner Kp=1.7, I=D=0 t
 2. Khi dừng, chọn trục, nhập cấu hình và Apply PID; đối chiếu gain board phản hồi.
 3. Xác định mốc ngang đúng. Xác minh thứ tự motor và chiều phản hồi với cánh đã tháo trước khi thử có lực đẩy trên đế.
 4. Xác nhận đế, Arm rồi Start trong 15 giây. Chỉ Start sau khi hiểu base và phản ứng motor của phần cứng.
-5. Xem **ANGLE** trước để biết có về mục tiêu không; sau đó xem **BODY RATE**, **RATE PID**, **MOTOR OUTPUT** để giải thích vì sao.
+5. Xem **ANGLE** trước để biết có về mục tiêu không; sau đó xem **BODY RATE**, **RATE PID**, **MOTORS** để giải thích vì sao.
 6. **Start / stop CSV log** ghi dữ liệu ra file trong Documents/DroneMotionLogs. Nút này và Pause/Clear đồ thị không dừng motor. Dùng **STOP / DISARM** để dừng.
 7. Sau Stop, đổi một nhóm thông số mỗi lần và ghi lại kết quả để có thể so sánh.
 
@@ -426,3 +425,59 @@ Phần mềm hiện chưa giữ độ cao, vị trí hoặc hướng Yaw tuyệt
 | [MainWindow.xaml](../../src/DroneMotion.Wpf/MainWindow.xaml) | Vị trí và nhãn các ô nhập/nút |
 
 Chi tiết tích phân, đạo hàm, watchdog và bản tin nằm ở [luồng kỹ thuật](luong-dieu-khien-cascade.md). Bạn có thể để phần đó đọc sau khi đã hiểu ví dụ ở mục 7.
+
+## 14. Đọc các số mới để biết PID đang làm gì
+
+Mở tab **Live PID plots** và chọn **Plot axis**. Số đo nằm ngay trên đường vẽ của từng khung; đọc theo thứ tự ANGLE → BODY RATE → RATE PID → MOTORS. Thanh bên giữ các ô nhập và nút điều khiển; **Board gain acknowledgements** có thể mở để xem phản hồi gain hiện tại.
+
+| Dòng trên app | Nghĩa là gì? | Vì sao cần xem? |
+|---|---|---|
+| ANGLE: Measured / Target / Error | Góc đo, góc muốn giữ và sai số `target − angle`, đơn vị ° | Biết drone còn nghiêng bao nhiêu so với mục tiêu |
+| BODY RATE: Measured / Target / Error | Tốc độ đo, tốc độ vòng góc yêu cầu và sai số `target − measured`, đơn vị °/s | Biết vòng tốc độ đang phải tăng hay giảm chuyển động quay |
+| RATE PID: P / I / D | Đóng góp tức thời của ba thành phần vòng tốc độ, đơn vị duty | Đối chiếu gain với kết quả tính; đây không phải ba ô nhập Kp/Ki/Kd |
+| RATE PID: Output | Kết quả vòng tốc độ sau giới hạn, đơn vị duty | Đây mới là phần sửa trước khi đổi dấu chiều motor và đưa vào bộ trộn |
+| AT LIMIT trong BODY RATE / RATE PID | Chỉ báo chạm biên của từng vòng | Phân biệt giới hạn tốc độ yêu cầu với giới hạn phần sửa duty |
+| MOTORS: LF / RF / LR / RR | Lệnh duty cuối cho bốn motor | Biết từng motor thực tế được yêu cầu chạy mức nào; không phải số vòng/phút đo được |
+| MOTORS: Mixer | `MIXER CLIPPED` nếu có lệnh motor vượt biên và bị cắt | Phát hiện phần sửa bị mất vì hết khoảng dự phòng |
+
+**Ví dụ:** Roll target = 0°, góc đo = +5°, gyro đo −3°/s; vòng góc P=2, I=D=0:
+
+```text
+Angle error = 0 − 5 = −5°
+Rate target = 2 × (−5) = −10°/s
+Rate error = −10 − (−3) = −7°/s
+
+Nếu Inner Kp=1, Ki=Kd=0:
+Inner P = −7 duty
+Limited output = −7 duty (chưa chạm giới hạn ±40)
+```
+
+Drone đang quay theo chiều quay về nhưng chậm hơn yêu cầu, nên vòng tốc độ tiếp tục sửa. Dấu âm là theo quy ước trục firmware; nó không có nghĩa motor nhận duty âm. Bộ trộn đổi phần sửa thành tăng/giảm quanh base. Với Roll hiện tại còn có `RollMotorDirection = −1` trước khi trộn.
+
+**AT LIMIT** nghĩa là giá trị nhận được đang sát biên đã được board báo, theo độ chính xác telemetry. Ví dụ rate target = −45 và limited output = −40 có thể làm cả hai chỉ báo sáng, trong khi Mixer vẫn báo chưa cắt. Chỉ báo này **không chứng minh PID đã yêu cầu vượt biên**: kết quả vừa đúng bằng biên cũng hiện AT LIMIT. Nó cũng không cho biết mọi biến động giữa hai mẫu gửi.
+
+Khi Stop hoặc trục không được chọn, app hiện **STOPPED** hoặc **axis inactive** cho chỉ báo giới hạn. Sai số góc của trục không chạy vẫn có thể khác 0; đừng dùng sai số đó để kết luận PID trục ấy đang hoạt động. Rate target/error của trục tắt không phải một yêu cầu cân bằng đang được thực thi.
+
+### Trạng thái chạy và tuổi dữ liệu
+
+**Control telemetry: RUNNING / STOPPED** lấy từ cờ `active` board gửi trong C/C2; dòng xác nhận gain phía trên không quyết định trạng thái này. **age** là thời gian app chờ từ lúc nhận mẫu điều khiển cuối, không phải chu kỳ PID hay độ trễ mạng đo được. Quá 2 giây, app chuyển sang **STALE; current board state unknown**. Mẫu STOPPED không tự chứng minh cánh đã dừng quay cơ học.
+
+### Xem đúng cấu hình mà board đang dùng
+
+Thông tin board được đặt vào đúng khung liên quan, đều là dữ liệu đọc lại:
+
+- **Build**, trong tooltip khi rê chuột vào biểu đồ: dấu thời gian biên dịch firmware, giúp phân biệt bản đã nạp; không phải mã commit Git.
+- **Last START**, trong MOTORS: base và trục được board chấp nhận ở lần Start gần nhất. Sửa ô nhập trên app chưa đổi dòng này. Stop vẫn giữ thông tin lần Start đó; base=0 là chưa có Start được chấp nhận kể từ boot.
+- **Outer**, góc phải ANGLE: gain góc Kp/Ki/Kd đã được board báo. Rê chuột để xem thêm output/I, đơn vị °/s.
+- **Inner**, góc phải RATE PID: gain tốc độ Kp/Ki/Kd đã được board báo và giới hạn output. Rê chuột để xem thêm giới hạn I, đơn vị duty.
+- **Motor range**, trong MOTORS: biên cắt của bộ trộn, hiện 0–220.
+
+Khi bật **Pause**, các số, gain và cấu hình này giữ cùng mẫu với đường vẽ. Dòng **sample RUNNING/STOPPED** và số giây kế bên nói về mẫu đang xem, không phải trạng thái mới nhất của board khi Pause. Dùng **Control telemetry** ở thanh bên để biết dữ liệu điều khiển còn mới hay không; Pause không dừng motor hoặc CSV. Bốn khung hiển thị cùng trang, không cần cuộn; tooltip giữ phần giải thích đầy đủ để giao diện gọn hơn.
+
+Đây là thông tin đọc lại, chưa có chức năng sửa limit qua app. Firmware gửi bản tin **CONFIG** khi báo PID/INFO và khi Start thành công. Firmware cũ vẫn dùng được phần dữ liệu nó hỗ trợ, nhưng app ghi **unknown** nếu thiếu CONFIG, và **unavailable (requires C2)** nếu thiếu rate target/output; không tự đoán các giá trị còn thiếu.
+
+### Ghi CSV để so sánh các lượt hiệu chỉnh
+
+Bật **Start / stop CSV log** trước khi Start để giữ cả quá trình. CSV giữ các cột telemetry và gain đã xác nhận, rồi thêm build, base/trục Start đã chấp nhận, giới hạn output/I từng trục và biên motor. Chưa nhận CONFIG thì các cột mới để trống. Các cột này giữ thông tin lần Start gần nhất ở cả mẫu dừng; đối chiếu thêm cột `active`.
+
+CSV chưa lưu điện áp pin, mốc ngang, điều kiện đế hay toàn bộ trạng thái bên trong vòng góc; hãy ghi chú những điều kiện đó riêng. Muốn tính lại sai số, lấy `rollTarget − roll` và `rollRateTarget − rollRate` (Pitch tương tự). Chỉ so sánh các lượt trong điều kiện cơ khí và nguồn điện tương đương.

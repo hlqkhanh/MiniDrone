@@ -45,6 +45,7 @@ public sealed class BalanceWorkflowTests
         listener.Start();
         var commands = new List<string>();
         int suppressGainReplies = 0;
+        int injectTimingFault = 0;
         int closing = 0;
         var finishCalibration = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var server = Task.Run(async () =>
@@ -71,8 +72,12 @@ public sealed class BalanceWorkflowTests
                 }
                 else if (line.StartsWith("CONTROL SETPOINT ")) await writer.WriteLineAsync("STATUS,CONTROL_SETPOINT_OK");
                 else if (line == "CONTROL ARM") await writer.WriteLineAsync("STATUS,CONTROL_ARMED");
-                else if (line.StartsWith("CONTROL START ")) await writer.WriteLineAsync("STATUS,CONTROL_RUNNING\nC2,10000,1,2,3,4,0,0,1,2,3,4,5,6,40,41,42,43,0,1,10,11,12,13");
+                else if (line.StartsWith("CONTROL START ")) await writer.WriteLineAsync(
+                    (cascade ? "CONFIG,test-build,40,1,45,10,45,10,40,20,40,20,0,220\n" : "") +
+                    "STATUS,CONTROL_RUNNING\nC2,10000,1,2,3,4,0,0,1,2,3,4,5,6,40,41,42,43,0,1,10,11,12,13");
                 else if (line == "MOTOR STOP") await writer.WriteLineAsync("STATUS,CONTROL_STOPPED");
+                else if (line == "MOTOR KEEPALIVE" && Interlocked.Exchange(ref injectTimingFault, 0) == 1)
+                    await writer.WriteLineAsync("STATUS,CONTROL_TIMING_FAULT\nTIMING,27000,22000,21000,1500");
             }
         });
         await using (var vm = new MainViewModel())
@@ -118,6 +123,21 @@ public sealed class BalanceWorkflowTests
             await Until(() => vm.ControlStatus == "CONTROL_RUNNING");
             await Until(() => vm.PidHistory.Snapshot().Length == 1);
             Assert.Equal(12, vm.PidHistory.Snapshot()[0].Values[21]);
+            var plotted = vm.PidHistory.Snapshot()[0];
+            Assert.Equal(0.2, plotted.Gains!["ROLL"].Kp);
+            if (cascade) Assert.Equal(40, plotted.Configuration!.BaseDuty);
+            Assert.Contains("Rate target / error: 10.00 / 7.00", vm.ControlData);
+            Assert.Contains("Limited output: 12.00 duty", vm.ControlData);
+            Assert.Contains("RUNNING", vm.ControlFreshness);
+            Assert.Contains(cascade ? "base 40, ROLL" : "unknown", vm.ControlConfigurationData);
+            if (cascade)
+            {
+                Volatile.Write(ref injectTimingFault, 1);
+                await Until(() => vm.TimingDiagnostics.Contains("dt 27.000 ms"));
+                Assert.Equal("CONTROL_TIMING_FAULT", vm.ControlStatus);
+                Assert.Contains("IO max 21.000 ms", vm.TimingDiagnostics);
+                Assert.False(vm.StartControlCommand.CanExecute(null));
+            }
             vm.PausePlots = true; Assert.True(vm.PidHistory.IsPaused);
             vm.PausePlots = false;
             vm.ClearPlotsCommand.Execute(null);
@@ -147,6 +167,12 @@ public sealed class BalanceWorkflowTests
             await Until(() => vm.ControlEditable);
             lock (commands) Assert.Equal(1, commands.Count(c => c == "PID SET PITCH 0.15 0 0"));
             Volatile.Write(ref closing,1);
+            vm.DisconnectCommand.Execute(null);
+            await Until(() => !vm.IsConnected);
+            Assert.Equal("No control data", vm.ControlData);
+            Assert.Contains("unknown", vm.ControlFreshness);
+            Assert.Contains("unknown", vm.ControlConfigurationData);
+            Assert.Equal("", vm.TimingDiagnostics);
         }
         try { await server.WaitAsync(TimeSpan.FromSeconds(3)); }
         catch (IOException) when (Volatile.Read(ref closing)==1) { /* Client disposal can reset a socket with an unread STOP acknowledgement. */ }

@@ -6,6 +6,20 @@ namespace DroneMotion.Tests;
 
 public sealed class PidProtocolTests
 {
+    [Fact]
+    public void TimingDiagnosticsSurviveFragmentedInputAndDisplayMilliseconds()
+    {
+        var parser = new SerialProtocolParser();
+        Assert.Empty(parser.Feed("TIMING,27000,22000,"));
+        var timing = Assert.IsType<ControlTimingMessage>(Assert.Single(parser.Feed("21000,1500\n")));
+        Assert.Equal(27000u, timing.IntervalMicros);
+        Assert.Equal(22000u, timing.LatenessMicros);
+        Assert.Equal(21000u, timing.MaxServiceMicros);
+        Assert.Equal(1500u, timing.PreviousSampleWorkMicros);
+        Assert.Contains("dt 27.000 ms", timing.Description);
+        Assert.Contains("IO max 21.000 ms", timing.Description);
+        Assert.Empty(parser.Feed("TIMING,-1,0,0,0\nTIMING,NaN,0,0,0\nTIMING,4294967296,0,0,0\nTIMING,1,2,3\n"));
+    }
     [Theory]
     [InlineData(23)]
     [InlineData(25)]

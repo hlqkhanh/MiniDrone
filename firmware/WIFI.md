@@ -4,6 +4,8 @@ ESP32 hỗ trợ hai cách kết nối WPF: nối thẳng vào Wi-Fi ESP32 tại
 
 Với cách qua router, cấu hình mạng lưu trong flash (NVS) và lần bật sau tự kết nối lại. Động cơ mặc định tắt; manual test và PID vẫn có watchdog, dừng khi mất kết nối/heartbeat. Kết nối lại không tự chạy motor.
 
+Khi bộ cân bằng đang **Arm hoặc chạy**, firmware tạm hoãn xử lý trang cấu hình web/DNS, thao tác lưu mạng và nhận viewer mới để giảm công việc có thể làm trễ PID. Kết nối TCP hiện có, lệnh STOP và heartbeat vẫn được phục vụ; cả Direct AP và Router/hotspot vẫn dùng được. Muốn đổi mạng hoặc mở trang cấu hình, Stop/disarm trước. Các tác vụ Wi-Fi hệ thống vẫn có thể chạy nền; cơ chế dừng khi timing vượt giới hạn vẫn được giữ.
+
 ## 1. Nạp firmware một lần
 
 1. Mở `DroneMotionMpu6050/DroneMotionMpu6050.ino` bằng Arduino IDE từ thư mục dự án. Giữ toàn bộ các file `.h` cùng thư mục, gồm TelemetryOutput.h, TelemetrySendBuffer.h, WifiProvisioner.h, WifiPortalPage.h và WifiConfig.example.h.

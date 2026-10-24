@@ -54,10 +54,13 @@ class TelemetryOutput : public Print {
     portal_.report();
 #endif
   }
-  bool acceptClient() {
+  bool acceptClient(bool controlBusy = false) {
 #if defined(ARDUINO_ARCH_ESP32)
-    pollWifi();
+    pollWifi(controlBusy);
     flushWifi();
+    // Keep existing TCP control/STOP/heartbeat traffic working, but postpone
+    // setup HTTP handlers, flash writes and new viewers until disarmed.
+    if (controlBusy) return false;
     auto incoming = server_.accept();
     if (!incoming) return false;
     if (client_.connected()) { incoming.stop(); return false; }
@@ -101,8 +104,8 @@ class TelemetryOutput : public Print {
     }
   }
 
-  void pollWifi() {
-    portal_.poll();
+  void pollWifi(bool controlBusy) {
+    if (!controlBusy) portal_.poll();
     const bool stationReady = portal_.stationReady();
     const IPAddress ip = stationReady ? WiFi.localIP() : IPAddress(0, 0, 0, 0);
     if (stationReady != stationReady_ || ip != localIp_) {

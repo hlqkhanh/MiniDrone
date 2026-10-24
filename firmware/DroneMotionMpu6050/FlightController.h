@@ -100,6 +100,8 @@ class Controller {
   // Roll was reversed after rig feedback. Pitch still needs physical validation.
   static constexpr float RollMotorDirection = -1.0f;
   static constexpr float PitchMotorDirection = 1.0f;
+  static constexpr unsigned MotorMinimum = 0;
+  static constexpr unsigned MotorMaximum = 220;
 
   // Inner loops: compare rate setpoints with gyro feedback; output duty corrections.
   PID rollPID;
@@ -305,11 +307,11 @@ class Controller {
     saturated = false;
 
     for (int n = 0; n < 4; n++) {
-      if (mixed[n] < 0 || mixed[n] > 220) {
+      if (mixed[n] < MotorMinimum || mixed[n] > MotorMaximum) {
         saturated = true;
       }
 
-      duties[n] = static_cast<unsigned>(clamp(mixed[n], 0, 220) + 0.5f);
+      duties[n] = static_cast<unsigned>(clamp(mixed[n], MotorMinimum, MotorMaximum) + 0.5f);
     }
 
     // 8. Stop control after more than 0.5 seconds of continuous mixer saturation.
@@ -321,6 +323,9 @@ class Controller {
 
     return true;
   }
+
+  // The last accepted Start base is retained after Stop for telemetry.
+  float baseDuty() const { return base_; }
 
  private:
   // Limit user angle setpoints, not measured sensor angles.

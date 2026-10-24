@@ -9,6 +9,7 @@
 #include "MotorControl.h"
 #include "FlightController.h"
 #include "GyroCalibration.h"
+#include "SampleTiming.h"
 #include <stdio.h>
 
 namespace Config {
@@ -63,6 +64,8 @@ uint32_t retrySensorAt = 0;
 uint32_t sequenceNumber = 0;
 uint32_t previousUpdateMicros = 0;
 uint32_t nextSampleMicros = 0;
+uint32_t maxServiceMicros = 0;
+uint32_t previousSampleWorkMicros = 0;
 struct CommandBuffer {
   char bytes[64];
   uint8_t length = 0;
@@ -393,6 +396,7 @@ void pollCalibration() {
   }
   previousUpdateMicros = micros();
   nextSampleMicros = previousUpdateMicros + Config::SamplePeriodMicros;
+  maxServiceMicros = previousSampleWorkMicros = 0;
   consecutiveReadFailures = 0;
   sensorAvailable = true;
   setStatusLed(true);
@@ -485,6 +489,33 @@ void stopControl(const char *reason) {
 }
 void stopControl() { stopControl("CONTROL_STOPPED"); }
 
+// Report after stopping outputs. Keep the existing status for older apps;
+// newer apps also receive exact microsecond diagnostics in a separate line.
+void stopForTiming(uint32_t interval, uint32_t late, uint32_t service) {
+  stopControl("CONTROL_TIMING_FAULT");
+  Telemetry.print(F("TIMING,")); Telemetry.print(interval);
+  Telemetry.print(','); Telemetry.print(late);
+  Telemetry.print(','); Telemetry.print(service);
+  Telemetry.print(','); Telemetry.println(previousSampleWorkMicros);
+}
+
+// Configuration readback is separate from C2 to preserve existing plot clients.
+// Axis uses the controller convention: 0=BOTH, 1=ROLL, 2=PITCH.
+void reportControlConfiguration() {
+  Telemetry.print(F("CONFIG," __DATE__ " " __TIME__ ","));
+  Telemetry.print(FlightControl.baseDuty(), 3); Telemetry.print(',');
+  Telemetry.print(FlightControl.axis);
+  const Flight::PID *pids[] = {
+      &FlightControl.rollAnglePID, &FlightControl.pitchAnglePID,
+      &FlightControl.rollPID, &FlightControl.pitchPID};
+  for (const Flight::PID *pid : pids) {
+    Telemetry.print(','); Telemetry.print(pid->outputLimit, 3);
+    Telemetry.print(','); Telemetry.print(pid->integralLimit, 3);
+  }
+  Telemetry.print(','); Telemetry.print(Flight::Controller::MotorMinimum);
+  Telemetry.print(','); Telemetry.println(Flight::Controller::MotorMaximum);
+}
+
 void reportPID() {
 #if defined(ARDUINO_ARCH_ESP32)
   Telemetry.println(F("STATUS,CONTROL_V1"));
@@ -499,6 +530,7 @@ void reportPID() {
     Telemetry.print(g.kp, 6); Telemetry.print(','); Telemetry.print(g.ki, 6);
     Telemetry.print(','); Telemetry.println(g.kd, 6);
   }
+  reportControlConfiguration();
 }
 
 void handleCommand(const char *command, bool wifi) {
@@ -550,7 +582,9 @@ void handleCommand(const char *command, bool wifi) {
     if (sscanf(text,"START %f %d %c",&a,&axis,&extra)==2 && controlArmed && controlOwnerWifi==wifi &&
         millis()-controlArmedAt<15000 && FlightControl.start(a,axis)) {
       if (Motors.startControl(wifi)) {
-        controlArmed=false; Telemetry.println(F("STATUS,CONTROL_RUNNING")); return;
+        controlArmed=false;
+        reportControlConfiguration();
+        Telemetry.println(F("STATUS,CONTROL_RUNNING")); return;
       }
     }
     stopControl("CONTROL_INVALID_OR_NOT_ARMED"); return;
@@ -635,6 +669,7 @@ void setup() {
 }
 
 void loop() {
+  const uint32_t serviceStarted = micros();
   if (FlightControl.active && !Motors.controlled()) stopControl("CONTROL_OUTPUT_STOPPED");
   if (controlArmed && millis()-controlArmedAt>=15000) stopControl("CONTROL_ARM_EXPIRED");
   Motors.poll(Telemetry,
@@ -644,7 +679,7 @@ void loop() {
       false
 #endif
   );
-  if (Telemetry.acceptClient()) {
+  if (Telemetry.acceptClient(FlightControl.active || controlArmed)) {
 #if defined(ARDUINO_ARCH_ESP32)
     wifiCommands = CommandBuffer{};
 #endif
@@ -660,6 +695,9 @@ void loop() {
 #if defined(ARDUINO_ARCH_ESP32)
   processCommands(Telemetry.clientStream(), wifiCommands, true);
 #endif
+
+  const uint32_t serviceMicros = static_cast<uint32_t>(micros() - serviceStarted);
+  if (serviceMicros > maxServiceMicros) maxServiceMicros = serviceMicros;
 
   if (calibrating) {
     pollCalibration();
@@ -697,10 +735,11 @@ void loop() {
   if (static_cast<int32_t>(now - nextSampleMicros) < 0) {
     return;
   }
-  nextSampleMicros += Config::SamplePeriodMicros;
-  if (static_cast<int32_t>(now - nextSampleMicros) > static_cast<int32_t>(Config::SamplePeriodMicros)) {
-    nextSampleMicros = now + Config::SamplePeriodMicros;
-  }
+  const uint32_t lateMicros = static_cast<uint32_t>(now - nextSampleMicros);
+  nextSampleMicros = SampleTiming::nextDeadline(nextSampleMicros, now, Config::SamplePeriodMicros);
+  const uint32_t intervalMicros = static_cast<uint32_t>(now - previousUpdateMicros);
+  const uint32_t intervalServiceMicros = maxServiceMicros;
+  maxServiceMicros = 0;
 
   RawSample sample;
   if (!readRawSample(sample)) {
@@ -717,10 +756,10 @@ void loop() {
   }
   consecutiveReadFailures = 0;
 
-  float dt = static_cast<uint32_t>(now - previousUpdateMicros) / 1000000.0f;
+  float dt = intervalMicros / 1000000.0f;
   previousUpdateMicros = now;
   if (dt < 0.001f || dt > 0.05f) {
-    if (FlightControl.active) stopControl("CONTROL_TIMING_FAULT");
+    if (FlightControl.active) stopForTiming(intervalMicros, lateMicros, intervalServiceMicros);
     motionCompensation.reset();
     dt = 1.0f / Config::SampleRateHz;
   }
@@ -747,7 +786,11 @@ void loop() {
   FlightControl.attitude(qW,qX,qY,qZ,gx,gy);
   lastControlSample = now;
   if (FlightControl.active) {
-    if (!FlightControl.update(dt)) stopControl(FlightControl.fault);
+    if (!FlightControl.update(dt)) {
+      if (strcmp(FlightControl.fault, "CONTROL_TIMING_FAULT") == 0)
+        stopForTiming(intervalMicros, lateMicros, intervalServiceMicros);
+      else stopControl(FlightControl.fault);
+    }
     else if (!Motors.writeControl(FlightControl.duties)) stopControl("CONTROL_PWM_OR_WATCHDOG_FAULT");
   }
   // Keep transport work below the 200 Hz control rate.
@@ -775,4 +818,5 @@ void loop() {
 #else
   sendQuaternion(now);
 #endif
+  previousSampleWorkMicros = static_cast<uint32_t>(micros() - now);
 }

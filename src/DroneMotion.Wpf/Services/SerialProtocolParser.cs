@@ -67,6 +67,16 @@ public sealed class SerialProtocolParser
         var fields = line.Split(',', StringSplitOptions.TrimEntries);
         switch (fields[0])
         {
+            case "TIMING" when fields.Length == 5 &&
+                uint.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out var intervalMicros) &&
+                uint.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out var latenessMicros) &&
+                uint.TryParse(fields[3], NumberStyles.None, CultureInfo.InvariantCulture, out var serviceMicros) &&
+                uint.TryParse(fields[4], NumberStyles.None, CultureInfo.InvariantCulture, out var previousWorkMicros):
+                message = new ControlTimingMessage(intervalMicros, latenessMicros, serviceMicros, previousWorkMicros);
+                return true;
+            case "CONFIG" when ControlConfiguration.TryParse(fields, out var configuration):
+                message = new ControlConfigurationMessage(configuration!);
+                return true;
             case "CAL" when fields.Length == 4 &&
                 int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out var accepted) &&
                 int.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out var required) &&

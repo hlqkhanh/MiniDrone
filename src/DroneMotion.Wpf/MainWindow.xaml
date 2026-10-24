@@ -205,7 +205,9 @@
                         <ComboBox ItemsSource="{Binding ControlAxes}" SelectedItem="{Binding ControlAxis}"/>
                         <Button Content="Set firmware level reference" Command="{Binding ZeroControlCommand}"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding AppliedPid}" TextWrapping="Wrap" Margin="0,8,0,4"/>
+                    <Expander Header="Board gain acknowledgements" Foreground="#CBD5E1" Margin="0,8,0,4">
+                        <TextBlock Text="{Binding AppliedPid}" TextWrapping="Wrap" FontSize="11"/>
+                    </Expander>
                     <CheckBox IsChecked="{Binding RigConfirmed}" Foreground="#E2E8F0">
                         <TextBlock Text="Rig secured; motor mapping and correction direction verified" TextWrapping="Wrap"/>
                     </CheckBox>
@@ -215,7 +217,19 @@
                         <Button Content="STOP / DISARM" Command="{Binding StopMotorsCommand}" Background="#991B1B"/>
                     </WrapPanel>
                     <TextBlock Text="{Binding ControlStatus}" TextWrapping="Wrap" Foreground="#67E8F9"/>
-                    <TextBlock Text="{Binding ControlData}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,6"/>
+                    <TextBlock Text="{Binding TimingDiagnostics}" TextWrapping="Wrap" FontSize="11" Foreground="#FCD34D"
+                               ToolTip="dt: sample-start interval; late: delay past scheduled sample; IO max: longest service pass between sample starts; previous sample: prior read/filter/PID/telemetry duration. These are diagnostic durations, not a complete CPU profile.">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding TimingDiagnostics}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding ControlFreshness}" TextWrapping="Wrap" Foreground="#FCD34D" Margin="0,6,0,0"/>
+                    <TextBlock Text="Measurements, confirmed gains and limits are shown with each chart in Live PID plots."
+                               TextWrapping="Wrap" FontSize="11" Foreground="#94A3B8" Margin="0,6,0,8"/>
                     <Button Content="Start / stop CSV log" Command="{Binding ToggleControlLogCommand}"/>
                     <TextBlock Text="{Binding LogStatus}" TextWrapping="Wrap" FontSize="11"/>
                     <TextBlock Text="PERFORMANCE" FontSize="11" Foreground="#94A3B8" Margin="0,5,0,7"/>
@@ -274,14 +288,16 @@
             <TabItem Header="Live PID plots" Foreground="#111827">
                 <Grid Background="#0F172A">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <WrapPanel Margin="10" VerticalAlignment="Center">
-                        <TextBlock Text="Plot axis" Foreground="#E2E8F0" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <ComboBox ItemsSource="{Binding PlotAxes}" SelectedItem="{Binding PlotAxis}" Width="100" Margin="0,0,12,0"/>
-                        <CheckBox Content="Pause plots" IsChecked="{Binding PausePlots}" Foreground="#E2E8F0" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                        <Button Content="Clear plots" Command="{Binding ClearPlotsCommand}" Margin="0"/>
-                        <TextBlock Text="20 Hz telemetry · 200 Hz controller" Foreground="#94A3B8" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                    </WrapPanel>
-                    <controls:PidPlot Grid.Row="1" History="{Binding PidHistory}" Axis="{Binding PlotAxis}"/>
+                    <StackPanel Orientation="Horizontal" Margin="10,6,10,2" VerticalAlignment="Center"
+                                ToolTip="30 s history · 20 Hz telemetry · 200 Hz controller. Hover over a chart for full gains and limits.">
+                        <ComboBox ItemsSource="{Binding PlotAxes}" SelectedItem="{Binding PlotAxis}" Width="86"
+                                  Padding="6,2" Margin="0,0,12,0" ToolTip="View Roll or Pitch; does not change the controlled axis."/>
+                        <CheckBox Content="Pause" IsChecked="{Binding PausePlots}" Foreground="#E2E8F0" VerticalAlignment="Center" Margin="0,0,12,0"
+                                  ToolTip="Freeze curves and displayed values. Motors and CSV keep running."/>
+                        <Button Content="Clear" Command="{Binding ClearPlotsCommand}" Margin="0" Padding="10,3"
+                                ToolTip="Clear chart history and wait for new samples. Does not stop motors."/>
+                    </StackPanel>
+                    <controls:PidPlot Grid.Row="1" History="{Binding PidHistory}" Axis="{Binding PlotAxis}" ClipToBounds="True"/>
                 </Grid>
             </TabItem>
             </TabControl>

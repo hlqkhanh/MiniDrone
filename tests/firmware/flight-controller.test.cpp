@@ -5,6 +5,9 @@
 
 int main() {
   Flight::Controller fc;
+  assert(fc.baseDuty() == 0);
+  assert(Flight::Controller::MotorMinimum == 0);
+  assert(Flight::Controller::MotorMaximum == 220);
   assert(!fc.start(60,0)); // Zero default gains cannot start.
   assert(!fc.setGains(1,{NAN,0,0}));
   assert(!fc.setGains(1,{6,0,0}));
@@ -12,6 +15,7 @@ int main() {
   assert(fc.setGains(2,{0.2f,0,0}));
   fc.attitude(1,0,0,0,0,0);
   assert(fc.start(60,1));
+  assert(fc.baseDuty() == 60 && fc.axis == 1);
   assert(!fc.setGains(1,{1,0,0}));
   fc.roll=5;
   assert(fc.update(0.005f));

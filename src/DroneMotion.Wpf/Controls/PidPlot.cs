@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using DroneMotion.Wpf.Models;
@@ -19,10 +21,18 @@ public sealed class PidPlot : FrameworkElement
     private static readonly Brush Green=Brushes.LightGreen;
     private static readonly Brush TextBrush=new SolidColorBrush(Color.FromRgb(203,213,225));
     private static readonly Brush GridBrush=new SolidColorBrush(Color.FromRgb(51,65,85));
+    private readonly TextBlock _tooltip = new() { MaxWidth = 520, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Black };
+    private PidFrame? _shownFrame;
+    private PidPanelReadout[] _shownReadouts = PidPanelReadout.Create(null, "ROLL");
+    private double _panelHeight;
+    private const double HeaderHeight = 23;
     public PidPlot() {
         _timer=new DispatcherTimer(TimeSpan.FromMilliseconds(250),DispatcherPriority.Background,(_,_)=>InvalidateVisual(),Dispatcher);
         _timer.Stop();
         Loaded+=(_,_)=>_timer.Start(); Unloaded+=(_,_)=>_timer.Stop();
+        ToolTip = _tooltip;
+        ToolTipService.SetInitialShowDelay(this, 300);
+        ToolTipService.SetShowDuration(this, 30000);
     }
     private static void OnHistoryChanged(DependencyObject d,DependencyPropertyChangedEventArgs e) {
         var plot=(PidPlot)d;
@@ -33,46 +43,79 @@ public sealed class PidPlot : FrameworkElement
     protected override void OnRender(DrawingContext dc) {
         base.OnRender(dc);
         dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(15,23,42)),null,new Rect(RenderSize));
-        if(ActualWidth<180 || ActualHeight<260) return;
+        if(ActualWidth<180 || ActualHeight<240) return;
         var frames=History?.Snapshot() ?? [];
-        string state=History?.IsPaused==true ? "PAUSED" : frames.Length==0 ? "Waiting for firmware control telemetry" : History!.AgeSeconds>2 ? $"NO NEW DATA ({History.AgeSeconds:F1}s)" : "LIVE";
-        Label(dc,$"{state}   |   {Axis}   |   last 30 s   |   firmware angles (independent of viewer Zero)",12,8);
-        if(frames.Length==0) { Label(dc,"Connect ESP32. Plots show measured telemetry; no simulated data.",12,35); }
+        var latest = frames.LastOrDefault();
+        var readouts = PidPanelReadout.Create(latest, Axis);
+        var paused = History?.IsPaused == true;
+        var stale = latest is not null && History!.AgeSeconds > 2;
+        string state = paused ? "PAUSED" : latest is null ? "WAITING" : stale ? "STALE" : "LIVE";
+        var status = latest is null ? $"{state} · {Axis}" :
+            $"{state} · {Axis} · sample {(latest.Values[18] == 1 ? "RUNNING" : "STOPPED")} · {latest.AgeSeconds:F1} s";
+        TrimmedLabel(dc, status, 12, 3, ActualWidth - 24, 10.5, paused || stale ? Amber : TextBrush);
+        _shownFrame = latest;
+        _shownReadouts = readouts;
         int angle=Axis=="PITCH" ? 2 : 1, rate=Axis=="PITCH" ? 4 : 3, target=Axis=="PITCH" ? 6 : 5;
         int p=Axis=="PITCH" ? 10 : 7, rateTarget=Axis=="PITCH" ? 20 : 19, output=Axis=="PITCH" ? 22 : 21;
         var panels=new (string title,(string name,int column,Brush brush)[] lines,bool pwm)[] {
-            ("ANGLE (degrees)",[("Measured",angle,Cyan),("Target",target,Amber)],false),
-            ("BODY RATE (degrees/s)",[("Measured",rate,Cyan),("Target (C2)",rateTarget,Amber)],false),
-            ("RATE PID (PWM duty units)",[("P",p,Cyan),("I",p+1,Green),("D",p+2,Purple),("Output limited (C2)",output,Brushes.White)],false),
-            ("MOTOR OUTPUT (0–255 duty)",[("LF",13,Cyan),("RF",14,Amber),("LR",15,Green),("RR",16,Purple)],true)
+            ("ANGLE (°)",[("Measured",angle,Cyan),("Target",target,Amber)],false),
+            ("BODY RATE (°/s)",[("Measured",rate,Cyan),("Target",rateTarget,Amber)],false),
+            ("RATE PID (duty)",[("P",p,Cyan),("I",p+1,Green),("D",p+2,Purple),("Output",output,Brushes.White)],false),
+            ("MOTORS (duty)",[("LF",13,Cyan),("RF",14,Amber),("LR",15,Green),("RR",16,Purple)],true)
         };
-        double panelHeight=(ActualHeight-35)/4;
+        double panelHeight=(ActualHeight-HeaderHeight)/4;
+        _panelHeight = panelHeight;
         double end=frames.Length==0 ? 30 : Math.Max(30,frames[^1].Seconds), start=end-30;
         for(int n=0;n<4;n++) {
-            double top=35+n*panelHeight;
+            double top=HeaderHeight+n*panelHeight;
             var panel=panels[n];
-            Label(dc,panel.title,12,top);
-            double legendX=12;
-            foreach(var line in panel.lines) {
-                dc.DrawLine(new Pen(line.brush,2),new Point(legendX,top+25),new Point(legendX+12,top+25));
-                Label(dc,line.name,legendX+16,top+17,10); legendX+=line.name.Length*6+42;
+            var readout = readouts[n];
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(17,28,47)),
+                new Pen(readout.Warning ? Amber : GridBrush, 0.8),
+                new Rect(6, top, ActualWidth - 12, panelHeight - 4), 4, 4);
+            TrimmedLabel(dc,panel.title,14,top+4,140,11,TextBrush);
+            var compact = readout.Warning ? (n == 3 ? "MIXER CLIPPED" : "AT LIMIT") : readout.CompactDetail;
+            TrimmedLabel(dc,compact,158,top+5,ActualWidth-174,10,readout.Warning ? Amber : TextBrush,TextAlignment.Right);
+            const double left = 56;
+            var chartWidth = ActualWidth - left - 16;
+            double slotWidth=chartWidth/readout.Values.Length, legendY=top+22;
+            for (var i = 0; i < readout.Values.Length; i++) {
+                var series = i < panel.lines.Length;
+                var color = series ? panel.lines[i].brush : TextBrush;
+                var value = readout.Values[i].Contains("not reported") ? "—" : readout.Values[i].Replace("unavailable", "—");
+                if (panel.pwm && value.EndsWith(".00",StringComparison.Ordinal)) value=value[..^3];
+                var caption = series ? $"{panel.lines[i].name} {value}" : value;
+                double legendX=left+i*slotWidth;
+                var marker=series ? 12 : 0;
+                if (series) dc.DrawLine(new Pen(color,2),new Point(legendX,legendY+7),new Point(legendX+7,legendY+7));
+                TrimmedLabel(dc,caption,legendX+marker,legendY,slotWidth-marker-5,10.5,color);
             }
-            var area=new Rect(58,top+38,ActualWidth-76,Math.Max(12,panelHeight-61));
+            // Shared offsets keep all four plot areas aligned at every window size.
+            var area=new Rect(left,top+43,chartWidth,Math.Max(1,panelHeight-62));
             double low=0,high=0;
             foreach(var frame in frames) foreach(var line in panel.lines) if(line.column<frame.Values.Length) {
                 low=Math.Min(low,frame.Values[line.column]); high=Math.Max(high,frame.Values[line.column]);
             }
-            if(panel.pwm) { low=0; high=255; }
+            if(panel.pwm) {
+                low=0;
+                // Retain sufficient scale for every visible configuration;
+                // legacy frames have only the native 8-bit scale to go by.
+                high=frames.Select(f=>f.Configuration?.Limits[9] ?? 255).DefaultIfEmpty(255).Max();
+            }
             else { double margin=Math.Max(1,(high-low)*0.12); low-=margin; high+=margin; }
-            for(int tick=0;tick<=4;tick++) {
-                double y=area.Top+area.Height*tick/4;
+            int verticalTicks=area.Height<80 ? 2 : 4;
+            for(int tick=0;tick<=verticalTicks;tick++) {
+                double y=area.Top+area.Height*tick/verticalTicks;
                 dc.DrawLine(new Pen(GridBrush,0.5),new Point(area.Left,y),new Point(area.Right,y));
-                Label(dc,(high-(high-low)*tick/4).ToString("0.#",CultureInfo.InvariantCulture),4,y-6,10);
+                double value=high-(high-low)*tick/verticalTicks;
+                string label=value.ToString(Math.Abs(value)>=10000 ? "0.#e0" : "0.#",CultureInfo.InvariantCulture);
+                TrimmedLabel(dc,label,8,y-6,left-15,9,TextBrush,TextAlignment.Right);
             }
             for(int tick=0;tick<=6;tick++) {
                 double x=area.Left+area.Width*tick/6;
                 dc.DrawLine(new Pen(GridBrush,0.5),new Point(x,area.Top),new Point(x,area.Bottom));
-                Label(dc,$"{(start+tick*5):0}s",x-6,area.Bottom+2,10);
+                // One common time scale is enough for the vertically aligned charts.
+                if(n==3) TrimmedLabel(dc,$"{(start+tick*5):0}s",x-12,area.Bottom+2,32,9,TextBrush);
             }
             dc.PushClip(new RectangleGeometry(area));
             foreach(var line in panel.lines) {
@@ -91,6 +134,31 @@ public sealed class PidPlot : FrameworkElement
             dc.Pop();
         }
     }
-    private void Label(DrawingContext dc,string text,double x,double y,double size=11) =>
-        dc.DrawText(new FormattedText(text,CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new Typeface("Segoe UI"),size,TextBrush,VisualTreeHelper.GetDpi(this).PixelsPerDip),new Point(x,y));
+    private FormattedText MakeText(string text, double size, Brush brush) =>
+        new(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"),
+            size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+
+    private void TrimmedLabel(DrawingContext dc,string text,double x,double y,double width,double size,Brush brush,
+        TextAlignment alignment=TextAlignment.Left)
+    {
+        if(string.IsNullOrEmpty(text) || width<=0) return;
+        var formatted = MakeText(text,size,brush);
+        formatted.MaxTextWidth = width;
+        formatted.MaxLineCount = 1;
+        formatted.Trimming = TextTrimming.CharacterEllipsis;
+        formatted.TextAlignment = alignment;
+        dc.DrawText(formatted,new Point(x,y));
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        var y=e.GetPosition(this).Y;
+        var index=_panelHeight>0 ? (int)Math.Floor((y-HeaderHeight)/_panelHeight) : -1;
+        var build=_shownFrame?.Configuration?.Build ?? "not received";
+        var state=_shownFrame is null ? "Waiting for control telemetry."
+            : $"Displayed sample: {(_shownFrame.Values[18]==1 ? "RUNNING" : "STOPPED")}; age {_shownFrame.AgeSeconds:F1} s.";
+        _tooltip.Text=(index is >=0 and <4 ? _shownReadouts[index].Detail+"\n" : "") +
+            $"{state}\nFirmware build: {build}\n30 s history · firmware angles use the controller level reference, independently of viewer Zero.\nPause freezes displayed samples; motors and CSV continue.";
+    }
 }

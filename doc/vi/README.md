@@ -9,7 +9,8 @@ Nếu mới sử dụng, đọc theo thứ tự này để tránh phải hiểu 
 | 1 | [Luồng và các field PID trên WPF](huong-dan-field-pid-wpf.md) | Vì sao cần hai vòng PID; từng ô/nút làm gì; đi từ góc lệch đến PWM bằng một ví dụ |
 | 2 | [Cách đọc đồ thị PID](do-thi-pid.md) | Nhìn góc, tốc độ, P/I/D và motor theo đúng thứ tự để giải thích phản ứng |
 | 3 | [Thực hành trên đế](pid-can-bang-tren-de.md) | Chuẩn bị, kiểm tra motor, Apply/Arm/Start/Stop và ghi lại từng lượt thử |
-| 4 | [Luồng kỹ thuật và liên hệ code](luong-dieu-khien-cascade.md) | Công thức, mapping trục, giới hạn, thời gian và giao thức khi cần đọc sâu |
+| 4 | [Hiệu chỉnh PID chi tiết theo số đo](huong-dan-hieu-chinh-pid-chi-tiet.md) | Chọn base, chỉnh Inner/Outer, đánh giá limit 45/40 và quyết định bằng đồ thị/CSV |
+| 5 | [Luồng kỹ thuật và liên hệ code](luong-dieu-khien-cascade.md) | Công thức, mapping trục, giới hạn, thời gian và giao thức khi cần đọc sâu |
 
 Các ví dụ số để học phép tính không phải bộ gain đã được xác nhận cho mọi phần cứng. Mỗi tài liệu tách rõ lệnh bạn nhập, giá trị board xác nhận và dữ liệu cảm biến gửi về.
 
