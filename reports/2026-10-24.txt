@@ -1,0 +1,5 @@
+Báo cáo ngày 24/10/2026
+- Tối ưu giao diện WPF: hiển thị 4 đồ thị trên một trang, đưa số đo, đầu ra PID và giới hạn vào từng biểu đồ.
+- Sửa lịch lấy mẫu để tránh các lượt PID chạy quá sát sau khi trễ; bổ sung chẩn đoán timing và giảm tác vụ cấu hình Wi-Fi khi cân bằng.
+- Thử nghiệm hiệu chỉnh PID thực tế và phân tích log CSV; ghi nhận góc còn lệch, rate dao động và ảnh hưởng của dây/kê, chưa chốt bộ thông số cân bằng.
+- Trau chuốt tài liệu hướng dẫn hiệu chỉnh PID, giải thích base, output, giới hạn và cách đánh giá từng lượt thử.

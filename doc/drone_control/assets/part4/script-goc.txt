@@ -1,0 +1,61 @@
+In the last video, we were given functioning flight code in the form of the quadcopter model in Simulink and we showed that it successfully hovered the Parrot Minidrone.  But what if we had to develop the code ourselves or make changes to it? How could we design and test the code in a safe way?  For that, we need a good model of the mini drone and the environment it’s going to operate in. That’s what we’re going to talk about in this video. I’m Brian, and welcome to a MATLAB Tech Talk.
+To understand how a model can help us, let’s look at a really simple block diagram.  In this first block, we have the flight control software.  This represents all of the control system software that we reviewed in the previous video.  This code has to interface with the rest of the mini drone firmware and so, as we talked about before it has two inputs, the raw sensor readings and the reference commands or set points, and two outputs, the motor speed commands and the stop flag.  Remember though, in the last video, we moved the reference commands to inside the flight code so really this input goes away and we’re just left with the one.
+
+The second block we’ll call 'model’ and it represents everything else, anything that isn’t the flight control code.  This includes the rest of the mini drone firmware, the hardware, the atmosphere it’s flying in … everything.  But we’ll get into the details of that in just a bit.  At a very basic level, the model inputs motors commands and the stop flag, makes a few calculations and outputs sensor measurements.  In this way, the model is wrapping around the flight code and provides the feedback loop. 
+
+Imagine we had this model that was so accurate that it perfectly represented reality.  To a bystander, it would be indistinguishable whether the results came from the actual hardware or if it came from this perfect model.  If this was the case we could simulate the mini drone performance using the model and be very confident that when we later run the flight code on the actual hardware it will have the same result. As long as we’re happy with the simulated performance, then our design is complete. The nice thing about simulating the performance, is that we can reset the model quickly and put the vehicle in any situation we want to see how it does.  And if it does poorly, we make the necessary changes and we don’t damage any of the hardware in the process.
+
+As you can imagine though, a perfect model of reality is impossible to create. Luckily, we don’t need to model everything. The trick is to figure out what to include in the model and what to leave out. Some of that knowledge comes easily by just understanding your system and how it will be operated. For example, we probably don’t need to model the code that turns on and off the front LED’s. They won’t impact our control system. But there are a lot of other things that aren’t as obvious and knowing what to model can require a little experience and investigation.  One example is whether to model the airframe structure as a rigid body or as a flexible body.  Do we need to take into account the flexibility and vibrational modes of the structure?  Will they meaningfully impact our sensor measurements or is the additional logic in the model just going to complicate matters and slow the simulation down without any noticeable benefit?  
+
+It’s hard to know exactly what to model and what to leave out initially.  Usually what happens is you start with your best guess, and then over time, the fidelity of your model will grow until you are satisfied with the match between your experimental results and your simulation.
+
+So simulation is a way to verify the system in situations that are hard or time consuming to physically test as long as the model adequately reflects reality. But we also use a model to design our control system in the first place.  And for control design it would be great if we could use the linear analysis tools that we already know.  Unfortunately, our nonlinear model we use for simulation doesn’t lend itself to well linear analysis and design. For that, we need a linear model.  Essentially, what we need to do is remove the nonlinear components in our model or estimate them as linear components.  The linear model will not reflect reality as accurately as the nonlinear model, but the hope is that it’s still accurate enough that we can use it to design our controllers.
+
+We would then have two different models that we can use for Model-Based Design. We have a lower fidelity, linear model that is useful for determining the controller structure and gains, and we have a higher fidelity nonlinear model that is useful for simulating the result and verifying the system.
+
+To summarize, the steps we’d take to design our flight control software using Model-Based Design looks like this.
+1. Create a high fidelity model of everything the flight control software needs to interact with.  More than liely, this will be a nonlinear model.
+2. Verify that the model matches reality with a number of test cases
+3. Once we have a model that reflects reality, we create a linear version of it so that we have both a linear and nonlinear model
+
+4. We use the linear model and our linear analysis tools to design and analyze our control system
+
+5. We use the nonlinear model to verify the performance of the control system
+
+6. We feel confident enough to run the flight control software on the actual hardware for final verification
+
+So far, I keep drawing this model as this single block. But rather than thinking about it as a monolithic set of calculations it’s generally easier to break it up into several smaller models that represent specific and discrete systems. 
+
+For our minidrone, we might break it up into the airframe structure, the actuators, the environment, and the sensors.  And then within these models are even smaller subsystem models like the gravity model or the IMU model.
+
+There are many reasons to approach thinking about modeling in this hierarchical way rather than lumping all of the behavior together into a single model. 
+
+- For instance, it allows multiple people and teams to build different parts of the model simultaneously
+
+- You can upgrade portions of the model based on which area needs more fidelity without impacting the rest
+
+- And each sub-model can be developed using different modeling techniques
+
+You can choose the modeling technique that makes the most sense or is the easiest for each system.  Then when you put it all together you’ll have an entire model that you can use for wrapping around your flight control software and simulating the results. 
+
+Just like the last video on the flight software, we don’t have the time in this video to build up the models from scratch. However, the quadcopter example within the aerospace block set comes with a model that provides a good starting point for our discussion. So let’s head over to Simulink and walk through it.
+
+I’ll point out a few interesting things as we go along, but I want you to realize that this is just one perspective on how to develop a quadcopter model and the different techniques you can use to generate the different subsystems. 
+
+So with that disclaimer out of the way, let’s jump into this particular model. 
+
+You can see we have the flight software that we talked about in the last video and wrapped around this block is the model that we’ll use for simulation.  At this level we have the Airframe, Environment, and Sensors.  Airframe is implemented as a variant subsystem, which means that before you run the model you can select which version of airframe you want to run with; the nonlinear model that we’ll use in this video for simulating the flight, or the linear airframe model that we’re going to use in the next video to tune the controllers.
+
+Let’s take a peak inside the nonlinear model to see how it’s set up.  There are two main blocks, the AC model on the left consists of the actuators models and a model of how the environment disturbances impact the system.  Basically, anything that can create a force or torque on our mini drone is calculated in this block.  The forces and torques are then fed into the 6DOF model.  This is a rigid body model that comes with the aerospace blockset. This is an example of using an existing model rather than going through the effort of writing out the equations of motion for a rigid body yourself.  Of course, you still need to determine the specific parameters for your rigid system like mass and inertia.  More than likely, the developer pulled this information from a CAD model of the minidrone, however, you could set up a physical test to calculate this information.
+
+Let’s go back up to the top level of the model and go into the environment block.  Here, again, it is a variant subsystem and we have the option of choosing constant environment variables or variables that change based on position.  We’re going to select the constant variables because things like gravity and air pressure aren’t going to change between ground level and hovering at less than a meter.  However, if you wanted to simulate how high your mini drone could fly, then selecting the changing environment will lower air pressure and density as it gets higher which will eventually stall the drone at some maximum altitude.    So choosing one model or another depends on what we’re trying to test for.
+
+OK, lastly, I want to go into the sensors block.  And, well you’ve guess it, this is also a variant subsystem.  Here, we can select dynamic sensors with noise or feedthrough sensors.  We’ll select the feedthrough option for tuning in the next video, but for this simulation we want our sensors to behave as much like the real things as possible.  Inside this subsystem, there are some hardcoded sensor calibration data and a block called sensor system that houses the models for the camera, the IMU, the ultra sound, and the pressure sensor.  
+
+Alright, now at this point, let’s head back up to the top level and run the simulation so that I can show you what the output looks like.  This particular model is set up with a 3D visualization that renders the mini drone based on the outputs from the simulation.  Just like in the last video, we’re trying to get the mini drone to hover about .7 meters above the ground.  We could check the simulation data and compare it to the saved data from the actual test we ran in the last video, but in the interest of time let’s just compare them visually.  I’ll play the two results side by side so that we can see that this model is fairly close to reality, at least for this one test condition.  
+
+Now that we have a model that we like, we can use it for things like safely simulating a failure and seeing how the system does.  For example, we can go back tot he sensor block and into the IMU model and change the gyro bias. Let’s say we estimated the bias poorly and it’s really three times worse than we expect.  Now we can simulate the system and see how our controller responds.
+
+It takes off just about the same, but the gyro bias error quickly causes our drone to roll away from level and then it just runs away, and eventually crashes into the ground.  So we’ve learned two things from this; one, if the gyro bias is 3 times worse, the drone won’t perform well, and 2, if we are worried about being this far off on estimating bias, then maybe we should change the stop flag logic to recognize that we’re drifting away and shut the drone down before we hurt the hardware.
+
+Alright, this was a fast walkthrough, but hopefully I’ve given you enough information to review the model on your own in more detail or to start the process of creating your own drone model. In the next video, we’re going to see how we can use the linear version of this model to tune the PID controllers.  If you don’t want to miss the next Tech Talk video, don’t forget to subscribe to this channel.  Also, if you want to check out my channel, control system lectures, I cover more control theory topics there as well. Thanks for watching, I’ll see you next time.

@@ -1,0 +1,369 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3000" height="1870" viewBox="0 0 3000 1870">
+<defs>
+<marker id="white" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#e8edf4" stroke-width="2"/></marker>
+<marker id="roll" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#71e0a2" stroke-width="2"/></marker>
+<marker id="pitch" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#ffb366" stroke-width="2"/></marker>
+<marker id="rater" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#65cfff" stroke-width="2"/></marker>
+<marker id="ratep" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#c1a7ff" stroke-width="2"/></marker>
+<marker id="red" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#ff7d86" stroke-width="2"/></marker>
+<marker id="yellow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#f7dc70" stroke-width="2"/></marker>
+</defs>
+<rect width="3000" height="1870" fill="#090e14"/>
+<style>text{font-family:"Segoe UI",Arial,"DejaVu Sans",sans-serif} .mono{font-family:Consolas,"DejaVu Sans Mono",monospace}</style>
+<text x="70" y="63" fill="#e8edf4" font-size="39" text-anchor="start" font-weight="600">
+<tspan x="70" dy="0">LUỒNG ĐIỀU KHIỂN CÂN BẰNG · CODE DRONE HIỆN TẠI</tspan>
+</text>
+<text x="70" y="103" fill="#a8b6c6" font-size="22" text-anchor="start">
+<tspan x="70" dy="0">Nhánh ESP32 · PID chạy trên board · Chu kỳ mục tiêu 200 Hz / 5 ms · Đối chiếu source: 25/10/2026</tspan>
+</text>
+<path d="M1040 1090 H350 V395 H390 V373" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1040 1090 H350 V395 H390 V373" fill="none" stroke="#71e0a2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#roll)"/>
+<path d="M1040 1160 H430 V695 H390 V673" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1040 1160 H430 V695 H390 V673" fill="none" stroke="#ffb366" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pitch)"/>
+<path d="M1040 1230 H910 V395 H960 V373" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1040 1230 H910 V395 H960 V373" fill="none" stroke="#65cfff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#rater)" stroke-dasharray="10 7"/>
+<path d="M1040 1300 H1000 V695 H960 V673" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1040 1300 H1000 V695 H960 V673" fill="none" stroke="#c1a7ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ratep)" stroke-dasharray="10 7"/>
+<path d="M350 445 H605 V415" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M350 445 H605 V415" fill="none" stroke="#71e0a2" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#roll)" stroke-dasharray="10 7"/>
+<circle cx="350" cy="445" r="5.5" fill="#71e0a2"/>
+<text x="477.5" y="472" fill="#71e0a2" font-size="18" text-anchor="middle">
+<tspan x="477.5" dy="0">Số đo → D</tspan>
+</text>
+<path d="M430 745 H605 V715" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M430 745 H605 V715" fill="none" stroke="#ffb366" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pitch)" stroke-dasharray="10 7"/>
+<circle cx="430" cy="745" r="5.5" fill="#ffb366"/>
+<text x="517.5" y="772" fill="#ffb366" font-size="18" text-anchor="middle">
+<tspan x="517.5" dy="0">Số đo → D</tspan>
+</text>
+<path d="M910 450 H1180 V415" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M910 450 H1180 V415" fill="none" stroke="#65cfff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#rater)" stroke-dasharray="10 7"/>
+<circle cx="910" cy="450" r="5.5" fill="#65cfff"/>
+<text x="1045.0" y="477" fill="#65cfff" font-size="18" text-anchor="middle">
+<tspan x="1045.0" dy="0">Số đo → D</tspan>
+</text>
+<path d="M1000 750 H1180 V715" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1000 750 H1180 V715" fill="none" stroke="#c1a7ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ratep)" stroke-dasharray="10 7"/>
+<circle cx="1000" cy="750" r="5.5" fill="#c1a7ff"/>
+<text x="1090.0" y="777" fill="#c1a7ff" font-size="18" text-anchor="middle">
+<tspan x="1090.0" dy="0">Số đo → D</tspan>
+</text>
+<text x="600" y="1075" fill="#71e0a2" font-size="25" text-anchor="middle">
+<tspan x="600" dy="0">Roll đo (°)</tspan>
+</text>
+<text x="650" y="1145" fill="#ffb366" font-size="25" text-anchor="middle">
+<tspan x="650" dy="0">Pitch đo (°)</tspan>
+</text>
+<text x="1185" y="1215" fill="#65cfff" font-size="22" text-anchor="middle">
+<tspan x="1185" dy="0">rollRate đo (°/s)</tspan>
+</text>
+<text x="1205" y="1285" fill="#c1a7ff" font-size="22" text-anchor="middle">
+<tspan x="1205" dy="0">pitchRate đo (°/s)</tspan>
+</text>
+<text x="605" y="213" fill="#f7dc70" font-size="28" text-anchor="middle" font-weight="600">
+<tspan x="605" dy="0">VÒNG NGOÀI · PID GÓC</tspan>
+</text>
+<text x="1180" y="213" fill="#f7dc70" font-size="28" text-anchor="middle" font-weight="600">
+<tspan x="1180" dy="0">VÒNG TRONG · PID TỐC ĐỘ</tspan>
+</text>
+<path d="M470 232 H740 M1040 232 H1320" stroke="#f7dc70" stroke-width="2"/>
+<rect x="70" y="145" width="240" height="84" rx="18" fill="#101821" stroke="#a8b6c6" stroke-width="2.5"/>
+<text x="190" y="179" fill="#a8b6c6" font-size="22" text-anchor="middle">
+<tspan x="190" dy="0">WPF → ESP32</tspan>
+<tspan x="190" dy="29">USB hoặc TCP Wi-Fi</tspan>
+</text>
+<rect x="70" y="285" width="240" height="130" rx="18" fill="#101821" stroke="#71e0a2" stroke-width="2.5"/>
+<text x="190" y="328" fill="#71e0a2" font-size="27" text-anchor="middle" font-weight="600">
+<tspan x="190" dy="0">Roll target</tspan>
+<tspan x="190" dy="42">−10° … +10°</tspan>
+</text>
+<path d="M310 350 H367" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M310 350 H367" fill="none" stroke="#71e0a2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#roll)"/>
+<circle cx="390" cy="350" r="23" fill="#090e14" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="390" y="358" fill="#e8edf4" font-size="26" text-anchor="middle">
+<tspan x="390" dy="0">Σ</tspan>
+</text>
+<text x="353" y="336" fill="#71e0a2" font-size="25" text-anchor="middle">
+<tspan x="353" dy="0">+</tspan>
+</text>
+<text x="418" y="390" fill="#71e0a2" font-size="26" text-anchor="middle">
+<tspan x="418" dy="0">−</tspan>
+</text>
+<path d="M413 350 H470" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M413 350 H470" fill="none" stroke="#71e0a2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#roll)"/>
+<rect x="470" y="285" width="270" height="130" rx="18" fill="#101821" stroke="#71e0a2" stroke-width="2.5"/>
+<text x="605" y="324" fill="#71e0a2" font-size="23" text-anchor="middle">
+<tspan x="605" dy="0">PID góc Roll</tspan>
+<tspan x="605" dy="34">rollAnglePID</tspan>
+<tspan x="605" dy="34">Output ±45 °/s · I ±10</tspan>
+</text>
+<path d="M740 350 H937" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M740 350 H937" fill="none" stroke="#71e0a2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#roll)"/>
+<text x="838" y="313" fill="#71e0a2" font-size="18" text-anchor="middle">
+<tspan x="838" dy="0">rollRateTarget</tspan>
+<tspan x="838" dy="27">(°/s)</tspan>
+</text>
+<circle cx="960" cy="350" r="23" fill="#090e14" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="960" y="358" fill="#e8edf4" font-size="26" text-anchor="middle">
+<tspan x="960" dy="0">Σ</tspan>
+</text>
+<text x="923" y="336" fill="#71e0a2" font-size="25" text-anchor="middle">
+<tspan x="923" dy="0">+</tspan>
+</text>
+<text x="988" y="390" fill="#71e0a2" font-size="26" text-anchor="middle">
+<tspan x="988" dy="0">−</tspan>
+</text>
+<path d="M983 350 H1040" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M983 350 H1040" fill="none" stroke="#71e0a2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#roll)"/>
+<rect x="1040" y="285" width="280" height="130" rx="18" fill="#101821" stroke="#71e0a2" stroke-width="2.5"/>
+<text x="1180" y="324" fill="#71e0a2" font-size="23" text-anchor="middle">
+<tspan x="1180" dy="0">PID tốc độ Roll</tspan>
+<tspan x="1180" dy="34">rollPID</tspan>
+<tspan x="1180" dy="34">Output ±40 duty · I ±20</tspan>
+</text>
+<path d="M1320 350 H1410" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1320 350 H1410" fill="none" stroke="#71e0a2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#roll)"/>
+<rect x="1410" y="298" width="210" height="104" rx="18" fill="#101821" stroke="#71e0a2" stroke-width="2.5"/>
+<text x="1515" y="338" fill="#71e0a2" font-size="22" text-anchor="middle">
+<tspan x="1515" dy="0">R = −rollOutput</tspan>
+<tspan x="1515" dy="34">(phần sửa duty)</tspan>
+</text>
+<rect x="70" y="585" width="240" height="130" rx="18" fill="#101821" stroke="#ffb366" stroke-width="2.5"/>
+<text x="190" y="628" fill="#ffb366" font-size="27" text-anchor="middle" font-weight="600">
+<tspan x="190" dy="0">Pitch target</tspan>
+<tspan x="190" dy="42">−10° … +10°</tspan>
+</text>
+<path d="M310 650 H367" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M310 650 H367" fill="none" stroke="#ffb366" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pitch)"/>
+<circle cx="390" cy="650" r="23" fill="#090e14" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="390" y="658" fill="#e8edf4" font-size="26" text-anchor="middle">
+<tspan x="390" dy="0">Σ</tspan>
+</text>
+<text x="353" y="636" fill="#ffb366" font-size="25" text-anchor="middle">
+<tspan x="353" dy="0">+</tspan>
+</text>
+<text x="418" y="690" fill="#ffb366" font-size="26" text-anchor="middle">
+<tspan x="418" dy="0">−</tspan>
+</text>
+<path d="M413 650 H470" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M413 650 H470" fill="none" stroke="#ffb366" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pitch)"/>
+<rect x="470" y="585" width="270" height="130" rx="18" fill="#101821" stroke="#ffb366" stroke-width="2.5"/>
+<text x="605" y="624" fill="#ffb366" font-size="23" text-anchor="middle">
+<tspan x="605" dy="0">PID góc Pitch</tspan>
+<tspan x="605" dy="34">pitchAnglePID</tspan>
+<tspan x="605" dy="34">Output ±45 °/s · I ±10</tspan>
+</text>
+<path d="M740 650 H937" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M740 650 H937" fill="none" stroke="#ffb366" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pitch)"/>
+<text x="838" y="613" fill="#ffb366" font-size="18" text-anchor="middle">
+<tspan x="838" dy="0">pitchRateTarget</tspan>
+<tspan x="838" dy="27">(°/s)</tspan>
+</text>
+<circle cx="960" cy="650" r="23" fill="#090e14" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="960" y="658" fill="#e8edf4" font-size="26" text-anchor="middle">
+<tspan x="960" dy="0">Σ</tspan>
+</text>
+<text x="923" y="636" fill="#ffb366" font-size="25" text-anchor="middle">
+<tspan x="923" dy="0">+</tspan>
+</text>
+<text x="988" y="690" fill="#ffb366" font-size="26" text-anchor="middle">
+<tspan x="988" dy="0">−</tspan>
+</text>
+<path d="M983 650 H1040" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M983 650 H1040" fill="none" stroke="#ffb366" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pitch)"/>
+<rect x="1040" y="585" width="280" height="130" rx="18" fill="#101821" stroke="#ffb366" stroke-width="2.5"/>
+<text x="1180" y="624" fill="#ffb366" font-size="23" text-anchor="middle">
+<tspan x="1180" dy="0">PID tốc độ Pitch</tspan>
+<tspan x="1180" dy="34">pitchPID</tspan>
+<tspan x="1180" dy="34">Output ±40 duty · I ±20</tspan>
+</text>
+<path d="M1320 650 H1410" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1320 650 H1410" fill="none" stroke="#ffb366" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pitch)"/>
+<rect x="1410" y="598" width="210" height="104" rx="18" fill="#101821" stroke="#ffb366" stroke-width="2.5"/>
+<text x="1515" y="638" fill="#ffb366" font-size="22" text-anchor="middle">
+<tspan x="1515" dy="0">P = +pitchOutput</tspan>
+<tspan x="1515" dy="34">(phần sửa duty)</tspan>
+</text>
+<path d="M1620 350 H1730" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1620 350 H1730" fill="none" stroke="#71e0a2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#roll)"/>
+<path d="M1620 650 H1730" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1620 650 H1730" fill="none" stroke="#ffb366" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pitch)"/>
+<text x="1675" y="328" fill="#71e0a2" font-size="26" text-anchor="middle">
+<tspan x="1675" dy="0">R</tspan>
+</text>
+<text x="1675" y="628" fill="#ffb366" font-size="26" text-anchor="middle">
+<tspan x="1675" dy="0">P</tspan>
+</text>
+<rect x="1745" y="130" width="300" height="100" rx="18" fill="#101821" stroke="#f7dc70" stroke-width="2.5"/>
+<text x="1895" y="168" fill="#f7dc70" font-size="26" text-anchor="middle">
+<tspan x="1895" dy="0">Base từ WPF</tspan>
+<tspan x="1895" dy="35">B = 1–180 duty</tspan>
+</text>
+<path d="M1895 230 V285" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1895 230 V285" fill="none" stroke="#f7dc70" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#yellow)"/>
+<rect x="1730" y="285" width="330" height="430" rx="18" fill="#101821" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="1895" y="329" fill="#e8edf4" font-size="27" text-anchor="middle" font-weight="600">
+<tspan x="1895" dy="0">MOTOR MIXING</tspan>
+<tspan x="1895" dy="40">B = base_</tspan>
+</text>
+<text x="1760" y="435" fill="#e8edf4" font-size="25" text-anchor="start" class="mono">
+<tspan x="1760" dy="0">LF = B + R − P</tspan>
+<tspan x="1760" dy="50">RF = B − R − P</tspan>
+<tspan x="1760" dy="50">LR = B + R + P</tspan>
+<tspan x="1760" dy="50">RR = B − R + P</tspan>
+</text>
+<text x="1895" y="674" fill="#a8b6c6" font-size="21" text-anchor="middle">
+<tspan x="1895" dy="0">R = motorRoll</tspan>
+<tspan x="1895" dy="28">P = motorPitch</tspan>
+</text>
+<path d="M2060 435 H2150" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2060 435 H2150" fill="none" stroke="#e8edf4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#white)"/>
+<rect x="2150" y="350" width="240" height="170" rx="18" fill="#101821" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="2270" y="390" fill="#e8edf4" font-size="23" text-anchor="middle">
+<tspan x="2270" dy="0">Giới hạn + làm tròn</tspan>
+<tspan x="2270" dy="43">0–220 duty</tspan>
+<tspan x="2270" dy="43">duties[4]</tspan>
+</text>
+<path d="M2390 435 H2480" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2390 435 H2480" fill="none" stroke="#e8edf4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#white)"/>
+<rect x="2480" y="335" width="290" height="200" rx="18" fill="#101821" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="2625" y="377" fill="#e8edf4" font-size="23" text-anchor="middle">
+<tspan x="2625" dy="0">Driver + 4 motor</tspan>
+<tspan x="2625" dy="39">→ chuyển động drone</tspan>
+<tspan x="2625" dy="39">PWM 20 kHz · 8 bit</tspan>
+<tspan x="2625" dy="39">GPIO 14 / 15 / 12 / 13</tspan>
+</text>
+<path d="M2770 435 H2870 V1125 H2770" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2770 435 H2870 V1125 H2770" fill="none" stroke="#e8edf4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#white)"/>
+<text x="2910" y="790" fill="#a8b6c6" font-size="24" text-anchor="middle" transform="rotate(90 2910 790)">Chuyển động thực → cảm biến</text>
+<rect x="1110" y="790" width="770" height="140" rx="18" fill="#181a17" stroke="#f7dc70" stroke-width="2.5"/>
+<text x="1135" y="823" fill="#f7dc70" font-size="23" text-anchor="start" font-weight="600">
+<tspan x="1135" dy="0">BÊN TRONG CÁC PID</tspan>
+</text>
+<text x="1135" y="856" fill="#e8edf4" font-size="20" text-anchor="start">
+<tspan x="1135" dy="0">D: đạo hàm âm số đo, lọc 10 Hz. I: tích phân hình thang.</tspan>
+<tspan x="1135" dy="29">Giữ I Inner nếu mixer bão hòa (lượt trước).</tspan>
+<tspan x="1135" dy="29">I Outer còn xét Inner hết biên; mỗi PID có chống windup.</tspan>
+</text>
+<rect x="470" y="790" width="400" height="140" rx="18" fill="#101821" stroke="#a8b6c6" stroke-width="2.5"/>
+<text x="495" y="823" fill="#a8b6c6" font-size="23" text-anchor="start" font-weight="600">
+<tspan x="495" dy="0">CHỌN TRỤC KHI START</tspan>
+</text>
+<text x="495" y="858" fill="#e8edf4" font-size="20" text-anchor="start">
+<tspan x="495" dy="0">ROLL / PITCH / BOTH</tspan>
+<tspan x="495" dy="28">Trục tắt: rateTarget = output = 0</tspan>
+<tspan x="495" dy="28">Sơ đồ hiển thị cả hai trục.</tspan>
+</text>
+<rect x="1950" y="790" width="820" height="140" rx="18" fill="#20171c" stroke="#ff7d86" stroke-width="2.5"/>
+<text x="1975" y="823" fill="#ff7d86" font-size="23" text-anchor="start" font-weight="600">
+<tspan x="1975" dy="0">ARM (&lt;15 s) / WATCHDOG / STOP</tspan>
+</text>
+<text x="1975" y="858" fill="#e8edf4" font-size="21" text-anchor="start">
+<tspan x="1975" dy="0">Timing ngoài 2–20 ms; mixer vượt biên liên tục &gt;0,5 s → dừng.</tspan>
+<tspan x="1975" dy="28">Mất heartbeat 2 s / không cập nhật output 100 ms → guard dừng.</tspan>
+<tspan x="1975" dy="28">Stop: PWM=0; reset bộ nhớ PID, giữ gain/target/mốc góc.</tspan>
+</text>
+<path d="M2625 790 V535" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2625 790 V535" fill="none" stroke="#ff7d86" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#red)" stroke-dasharray="10 7"/>
+<text x="2644" y="655" fill="#ff7d86" font-size="22" text-anchor="start">
+<tspan x="2644" dy="0">Cắt PWM</tspan>
+</text>
+<text x="1060" y="984" fill="#a8b6c6" font-size="25" text-anchor="start" font-weight="600">
+<tspan x="1060" dy="0">PHẢN HỒI CẢM BIẾN · TỪ PHẢI SANG TRÁI</tspan>
+</text>
+<rect x="2490" y="1030" width="280" height="190" rx="18" fill="#101821" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="2630" y="1072" fill="#e8edf4" font-size="22" text-anchor="middle">
+<tspan x="2630" dy="0">IMU · SPI</tspan>
+<tspan x="2630" dy="39">MPU6500 / MPU9250</tspan>
+<tspan x="2630" dy="39">Accel + gyro</tspan>
+<tspan x="2630" dy="39">Lấy mẫu mục tiêu 200 Hz</tspan>
+</text>
+<path d="M2490 1125 H2400" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2490 1125 H2400" fill="none" stroke="#e8edf4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#white)"/>
+<text x="2445" y="1098" fill="#a8b6c6" font-size="19" text-anchor="middle">
+<tspan x="2445" dy="0">raw</tspan>
+</text>
+<rect x="2070" y="1030" width="330" height="190" rx="18" fill="#101821" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="2235" y="1068" fill="#e8edf4" font-size="23" text-anchor="middle">
+<tspan x="2235" dy="0">Đổi đơn vị + bù bias</tspan>
+<tspan x="2235" dy="40">ax, ay, az (g)</tspan>
+<tspan x="2235" dy="40">gx, gy, gz (rad/s)</tspan>
+<tspan x="2235" dy="40">Bias: hiệu chuẩn gyro</tspan>
+</text>
+<path d="M2070 1125 H1980" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2070 1125 H1980" fill="none" stroke="#e8edf4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#white)"/>
+<circle cx="2020" cy="1125" r="5.5" fill="#e8edf4"/>
+<rect x="1710" y="1030" width="270" height="190" rx="18" fill="#101821" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="1845" y="1071" fill="#e8edf4" font-size="25" text-anchor="middle">
+<tspan x="1845" dy="0">Madgwick</tspan>
+<tspan x="1845" dy="45">Accel + gyro →</tspan>
+<tspan x="1845" dy="45">qW, qX, qY, qZ</tspan>
+</text>
+<path d="M1710 1125 H1610" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1710 1125 H1610" fill="none" stroke="#e8edf4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#white)"/>
+<text x="1660" y="1100" fill="#e8edf4" font-size="25" text-anchor="middle">
+<tspan x="1660" dy="0">q</tspan>
+</text>
+<rect x="1040" y="1010" width="570" height="340" rx="18" fill="#101821" stroke="#e8edf4" stroke-width="2.5"/>
+<text x="1325" y="1049" fill="#e8edf4" font-size="26" text-anchor="middle" font-weight="600">
+<tspan x="1325" dy="0">FlightControl.attitude()</tspan>
+</text>
+<text x="1060" y="1098" fill="#71e0a2" font-size="23" text-anchor="start">
+<tspan x="1060" dy="0">Roll = −angleY(q) − zeroRoll</tspan>
+</text>
+<text x="1060" y="1168" fill="#ffb366" font-size="23" text-anchor="start">
+<tspan x="1060" dy="0">Pitch = −angleX(q) − zeroPitch</tspan>
+</text>
+<text x="1060" y="1238" fill="#65cfff" font-size="23" text-anchor="start">
+<tspan x="1060" dy="0">rollRate = −gy × 180/π</tspan>
+</text>
+<text x="1060" y="1308" fill="#c1a7ff" font-size="23" text-anchor="start">
+<tspan x="1060" dy="0">pitchRate = −gx × 180/π</tspan>
+</text>
+<path d="M2020 1125 V1430 H1330 V1350" fill="none" stroke="#090e14" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2020 1125 V1430 H1330 V1350" fill="none" stroke="#65cfff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#rater)" stroke-dasharray="10 7"/>
+<circle cx="2020" cy="1125" r="5.5" fill="#e8edf4"/>
+<text x="1680" y="1408" fill="#65cfff" font-size="23" text-anchor="middle">
+<tspan x="1680" dy="0">gx, gy đã bù bias → rate, KHÔNG đi qua góc Madgwick</tspan>
+</text>
+<text x="2235" y="1260" fill="#a8b6c6" font-size="20" text-anchor="middle">
+<tspan x="2235" dy="0">Bù drift chậm chỉ cập nhật</tspan>
+<tspan x="2235" dy="29">khi dừng và chưa Arm.</tspan>
+</text>
+<text x="70" y="1435" fill="#a8b6c6" font-size="21" text-anchor="start">
+<tspan x="70" dy="0">CONTROL ZERO đặt zeroRoll / zeroPitch khi dừng, chưa Arm.</tspan>
+</text>
+<rect x="70" y="1510" width="900" height="260" rx="18" fill="#101821" stroke="#a8b6c6" stroke-width="2.5"/>
+<text x="95" y="1551" fill="#f7dc70" font-size="24" text-anchor="start" font-weight="600">
+<tspan x="95" dy="0">KHÁC VỚI SƠ ĐỒ POSITION HOLD TRONG VIDEO</tspan>
+</text>
+<text x="95" y="1596" fill="#e8edf4" font-size="23" text-anchor="start">
+<tspan x="95" dy="0">• Không PID vị trí X/Y; không đổi World→Body bằng Yaw.</tspan>
+<tspan x="95" dy="42">• Không PID Yaw; không PID giữ độ cao.</tspan>
+<tspan x="95" dy="42">• Base là lệnh duty người dùng nhập, không phải Altitude PID.</tspan>
+<tspan x="95" dy="42">• Góc mục tiêu do WPF gửi, không do vòng vị trí tạo ra.</tspan>
+</text>
+<rect x="1040" y="1510" width="900" height="260" rx="18" fill="#101821" stroke="#a8b6c6" stroke-width="2.5"/>
+<text x="1065" y="1551" fill="#f7dc70" font-size="24" text-anchor="start" font-weight="600">
+<tspan x="1065" dy="0">WPF / TELEMETRY · APP KHÔNG TÍNH PID</tspan>
+</text>
+<text x="1065" y="1596" fill="#e8edf4" font-size="23" text-anchor="start">
+<tspan x="1065" dy="0">• WPF gửi gain, target, base, Arm / Start / Stop.</tspan>
+<tspan x="1065" dy="42">• C2 ≈20 Hz: góc, rate, P/I/D Inner, output, PWM.</tspan>
+<tspan x="1065" dy="42">• Q ≈100 Hz: mô hình 3D; Zero orientation chỉ đổi hình.</tspan>
+<tspan x="1065" dy="42">• Manual motor output đi riêng, không tự cân bằng.</tspan>
+</text>
+<rect x="2010" y="1510" width="760" height="260" rx="18" fill="#101821" stroke="#a8b6c6" stroke-width="2.5"/>
+<text x="2035" y="1551" fill="#f7dc70" font-size="24" text-anchor="start" font-weight="600">
+<tspan x="2035" dy="0">CÁCH ĐỌC SƠ ĐỒ</tspan>
+</text>
+<text x="2035" y="1596" fill="#e8edf4" font-size="23" text-anchor="start">
+<tspan x="2035" dy="0">• Mũi tên về dấu −: phản hồi âm.</tspan>
+<tspan x="2035" dy="42">• Nhánh “Số đo → D”: tính D từ số đo.</tspan>
+<tspan x="2035" dy="42">• Giao nhau không chấm = không nối tín hiệu.</tspan>
+<tspan x="2035" dy="42">• PWM không phải RPM/lực đẩy được đo.</tspan>
+</text>
+<text x="70" y="1827" fill="#a8b6c6" font-size="23" text-anchor="start">
+<tspan x="70" dy="0">Mô tả phần mềm hiện tại; không xác nhận chiều lực đẩy ngoài đời. PitchMotorDirection=+1 vẫn cần kiểm tra trên phần cứng.</tspan>
+</text>
+</svg>

@@ -1,348 +1,86 @@
-#pragma once
+#include <Wire.h>
 
-#include <math.h>
+// Sensor-only sketch for Nano/Uno + MPU6050. No motor pins or control commands.
+// Raw scales: +/-2 g and +/-500 degrees/second. No fusion or bias correction.
+uint8_t address = 0x68;
+bool ready = false;
+uint32_t nextSample = 0;
+uint32_t retryAt = 0;
 
-namespace Flight {
-
-// Restrict a value to the inclusive range [lo, hi].
-inline float clamp(float v, float lo, float hi) {
-  return fmaxf(lo, fminf(hi, v));
+bool readRegisters(uint8_t reg, uint8_t *data, uint8_t count) {
+  Wire.beginTransmission(address);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(address, count, static_cast<uint8_t>(true)) != count) return false;
+  for (uint8_t i = 0; i < count; i++) data[i] = Wire.read();
+  return true;
 }
 
-// Gains configured through WPF, distinct from the computed p/i/d terms.
-struct Gains {
-  float kp = 0;
-  float ki = 0;
-  float kd = 0;
-};
+bool configure(uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(address);
+  Wire.write(reg); Wire.write(value);
+  if (Wire.endTransmission(true) != 0) return false;
+  uint8_t actual = 0;
+  return readRegisters(reg, &actual, 1) && actual == value;
+}
 
-// Reusable PID for both angle and rate control.
-// Output units depend on the loop: deg/s for angle, PWM duty units for rate.
-struct PID {
-  Gains gains;
-
-  float outputLimit = 40;
-  float integralLimit = 20;
-
-  // Current P/I/D contributions reported to WPF.
-  float p = 0;
-  float i = 0;
-  float d = 0;
-
-  // State retained between updates for integration and differentiation.
-  float previous = 0;       // Previous measurement, not the previous error.
-  float filtered = 0;       // Filtered negative measurement derivative.
-  float previousError = 0;
-  bool initialized = false;
-
-  // Clear controller state while retaining gains and configured limits.
-  void reset() {
-    p = 0;
-    i = 0;
-    d = 0;
-    previous = 0;
-    filtered = 0;
-    previousError = 0;
-    initialized = false;
-  }
-
-  // target: setpoint; measured: feedback; dt: elapsed time in seconds.
-  // integrate=false freezes I while P and D continue to update.
-  float update(float target, float measured, float dt, bool integrate) {
-    if (!isfinite(dt) || dt <= 0 || dt > 0.02f ||
-        !isfinite(target) || !isfinite(measured)) {
-      return 0;
-    }
-
-    const float error = target - measured;
-
-    // P: respond to the current tracking error.
-    p = gains.kp * error;
-
-    // I: average consecutive errors for trapezoidal integration.
-    // Use the current error alone on the first update.
-    const float integralError = initialized ? (error + previousError) * 0.5f : error;
-
-    // D: differentiate the measurement negatively to avoid setpoint kick.
-    // Start with a zero derivative because no previous measurement exists.
-    float raw = initialized ? -(measured - previous) / dt : 0;
-
-    previousError = error;
-    previous = measured;
-    initialized = true;
-
-    // Low-pass filter the derivative at 10 Hz before applying Kd.
-    filtered += (dt / (dt + 0.0159155f)) * (raw - filtered);
-    d = gains.kd * filtered;
-
-    // Bound the candidate integral and calculate the tentative total output.
-    float candidate = clamp(
-        i + gains.ki * integralError * dt,
-        -integralLimit,
-        integralLimit);
-    float trial = p + candidate + d;
-
-    // Anti-windup: accept the candidate only when integration is enabled and
-    // the total is within limits, or the error drives it back toward the range.
-    if (integrate && (fabsf(trial) <= outputLimit || error * trial < 0)) {
-      i = candidate;
-    }
-
-    return clamp(p + i + d, -outputLimit, outputLimit);
-  }
-};
-
-// Update pipeline:
-// angle setpoint -> angle PID -> rate setpoint -> rate PID -> mixer -> duty.
-class Controller {
- public:
-  // Apply polarity at the motor side; keep angle and gyro signs consistent.
-  // Roll was reversed after rig feedback. Pitch still needs physical validation.
-  static constexpr float RollMotorDirection = -1.0f;
-  static constexpr float PitchMotorDirection = 1.0f;
-  static constexpr unsigned MotorMinimum = 0;
-  static constexpr unsigned MotorMaximum = 220;
-
-  // Inner loops: compare rate setpoints with gyro feedback; output duty corrections.
-  PID rollPID;
-  PID pitchPID;
-
-  // Outer loops: compare angle setpoints with measured angles; output deg/s.
-  PID rollAnglePID;
-  PID pitchAnglePID;
-
-  Controller() {
-    // Angle loops default to P-only. Rate gains remain zero until configured.
-    rollAnglePID.gains = pitchAnglePID.gains = {2, 0, 0};
-    rollAnglePID.outputLimit = pitchAnglePID.outputLimit = 45;
-    rollAnglePID.integralLimit = pitchAnglePID.integralLimit = 10;
-  }
-
-  bool active = false;     // Control is running after Start.
-  bool saturated = false; // A mixed motor command exceeded 0-220 last update.
-
-  // Body attitude in degrees and angular rates in deg/s.
-  float roll = 0;
-  float pitch = 0;
-  float rollRate = 0;
-  float pitchRate = 0;
-
-  // User angle setpoints and rate setpoints generated by the angle loops.
-  float rollTarget = 0;
-  float pitchTarget = 0;
-  float rollRateTarget = 0;
-  float pitchRateTarget = 0;
-
-  // Rate-loop duty corrections before motor polarity is applied.
-  float rollOutput = 0;
-  float pitchOutput = 0;
-
-  // Angle reference offsets set by CONTROL ZERO, in degrees.
-  float zeroRoll = 0;
-  float zeroPitch = 0;
-
-  // Motor order: left front, right front, left rear, right rear.
-  unsigned duties[4] = {};
-
-  int axis = 0; // 0 = BOTH, 1 = ROLL, 2 = PITCH.
-  const char *fault = "CONTROL_STOPPED";
-
-  // Stop control and zero internal commands.
-  // The firmware also calls Motors.stop() to switch off hardware outputs.
-  void stop() {
-    active = false;
-
-    rollPID.reset();
-    pitchPID.reset();
-    rollAnglePID.reset();
-    pitchAnglePID.reset();
-
-    rollRateTarget = 0;
-    pitchRateTarget = 0;
-    rollOutput = 0;
-    pitchOutput = 0;
-
-    saturated = false;
-    saturatedFor_ = 0;
-
-    for (auto &duty : duties) {
-      duty = 0;
+bool initializeImu() {
+  uint8_t identity = 0;
+  bool found = false;
+  for (uint8_t candidate = 0x68; candidate <= 0x69; candidate++) {
+    address = candidate;
+    if (readRegisters(0x75, &identity, 1) && (identity == 0x68 || identity == 0x69)) {
+      found = true; break;
     }
   }
+  if (!found) return false;
+  // CONFIG=0 bypasses the selectable MPU6050 DLPF (device bandwidth remains finite).
+  // With bypass, gyro internal rate is 8 kHz; divider 79 yields 100 Hz.
+  return configure(0x6B, 0x01) && configure(0x6C, 0x00) &&
+         configure(0x1A, 0x00) && configure(0x19, 79) &&
+         configure(0x1B, 0x08) && configure(0x1C, 0x00);
+}
 
-  // Gains can only be changed while control is stopped.
-  // which: 1 = roll rate, 2 = pitch rate, 3 = roll angle, 4 = pitch angle.
-  bool setGains(int which, Gains g) {
-    if ((which < 1 || which > 4) || active ||
-        !isfinite(g.kp) || !isfinite(g.ki) || !isfinite(g.kd) ||
-        g.kp < 0 || g.kp > 5 ||
-        g.ki < 0 || g.ki > 2 ||
-        g.kd < 0 || g.kd > 0.2f) {
-      return false;
-    }
+int16_t signed16(const uint8_t *data) {
+  return static_cast<int16_t>((static_cast<uint16_t>(data[0]) << 8) | data[1]);
+}
 
-    PID &pid = which == 1 ? rollPID
-               : which == 2 ? pitchPID
-               : which == 3 ? rollAnglePID
-                            : pitchAnglePID;
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+  Wire.setClock(400000UL);
+#if defined(WIRE_HAS_TIMEOUT)
+  Wire.setWireTimeout(25000, true);
+#endif
+  delay(200);
+  Serial.println(F("STATUS,RAW_IMU_NO_FUSION_NO_BIAS"));
+}
 
-    pid.gains = g;
-    pid.reset();
-    return true;
+void loop() {
+  if (!ready) {
+    if (static_cast<int32_t>(millis() - retryAt) < 0) return;
+    ready = initializeImu();
+    retryAt = millis() + 1500;
+    if (!ready) { Serial.println(F("ERROR,MPU6050_NOT_READY_CHECK_A4_A5")); return; }
+    Serial.println(F("STATUS,MPU6050_READY_DLPF_BYPASS_100HZ"));
+    nextSample = micros() + 10000;
   }
-
-  // Accept an attitude quaternion (w/x/y/z) and gyro X/Y (gx/gy, rad/s).
-  // Map them to the same body-axis convention as WPF OrientationService.
-  void attitude(float w, float x, float y, float z, float gx, float gy) {
-    const float norm = w * w + x * x + y * y + z * z;
-
-    // Require a near-unit quaternion and finite gyro readings.
-    // Mark angles invalid so Start/update cannot control using this sample.
-    if (!isfinite(norm) || norm < 0.9f || norm > 1.1f ||
-        !isfinite(gx) || !isfinite(gy)) {
-      roll = NAN;
-      pitch = NAN;
-      return;
-    }
-
-    const float degrees = 57.2957795f; // Radians-to-degrees conversion.
-
-    // Mounted board: body roll = negative sensor Y angle; pitch = negative X angle.
-    // Subtract ZERO offsets from angles only, not from angular rates.
-    roll = -asinf(clamp(2 * (w * y - z * x), -1, 1)) * degrees - zeroRoll;
-    pitch = -atan2f(
-        2 * (w * x + y * z),
-        1 - 2 * (x * x + y * y)) * degrees - zeroPitch;
-
-    rollRate = -gy * degrees;
-    pitchRate = -gx * degrees;
+  const uint32_t now = micros();
+  if (static_cast<int32_t>(now - nextSample) < 0) return;
+  nextSample = now + 10000; // No catch-up bursts after a slow transaction.
+  uint8_t bytes[14];
+  if (!readRegisters(0x3B, bytes, sizeof(bytes))) {
+    Serial.println(F("ERROR,IMU_READ")); ready = false; return;
   }
-
-  // Start control with the requested base duty and selected axis.
-  // The calling firmware checks ARM state, connection ownership and ARM timeout.
-  bool start(float base, int selectedAxis) {
-    if (active || !isfinite(base) || base < 1 || base > 180 ||
-        selectedAxis < 0 || selectedAxis > 2 ||
-        !isfinite(roll) || !isfinite(pitch) ||
-        !isfinite(rollRate) || !isfinite(pitchRate) || !validTargets() ||
-        (selectedAxis != 2 && (rollPID.gains.kp <= 0 || rollAnglePID.gains.kp <= 0)) ||
-        (selectedAxis != 1 && (pitchPID.gains.kp <= 0 || pitchAnglePID.gains.kp <= 0))) {
-      return false;
-    }
-
-    // Reset the previous run's PID state; retain gains, targets and ZERO offsets.
-    stop();
-    base_ = base;
-    axis = selectedAxis;
-    active = true;
-    saturatedFor_ = 0;
-    fault = "CONTROL_RUNNING";
-    return true;
+  bool allZero = true, allOnes = true;
+  for (uint8_t value : bytes) { allZero &= value == 0; allOnes &= value == 0xFF; }
+  if (allZero || allOnes) { Serial.println(F("ERROR,IMU_INVALID")); ready = false; return; }
+  Serial.print(F("RAW,")); Serial.print(now);
+  for (uint8_t offset = 0; offset < 6; offset += 2) {
+    Serial.print(','); Serial.print(signed16(bytes + offset) / 16384.0f, 4);
   }
-
-  // Perform one control update. MotorControl writes duties[] to hardware afterward.
-  bool update(float dt) {
-    // 1. Validate control state, elapsed time and input data.
-    if (!active) {
-      return false;
-    }
-
-    if (!isfinite(dt) || dt < 0.002f || dt > 0.02f) {
-      return fail("CONTROL_TIMING_FAULT");
-    }
-
-    if (!isfinite(roll) || !isfinite(pitch) ||
-        !isfinite(rollRate) || !isfinite(pitchRate)) {
-      return fail("CONTROL_ATTITUDE_FAULT");
-    }
-
-    if (!validTargets()) {
-      return fail("CONTROL_SETPOINT_FAULT");
-    }
-
-    // Measured tilt does not gate control. Angle setpoints remain limited to +/-10 deg.
-
-    // 2. Decide whether the angle loops may integrate this update.
-    // Use the previous mixer/output state to avoid integral buildup
-    // when the mixer or rate loop has exhausted its control authority.
-    const bool rollIntegrate = !saturated && fabsf(rollOutput) < rollPID.outputLimit;
-    const bool pitchIntegrate = !saturated && fabsf(pitchOutput) < pitchPID.outputLimit;
-
-    // 3. OUTER: angle setpoints and angle feedback -> rate setpoints (deg/s).
-    // PITCH mode disables roll correction; ROLL mode disables pitch correction.
-    rollRateTarget = axis == 2
-        ? 0
-        : rollAnglePID.update(rollTarget, roll, dt, rollIntegrate);
-
-    pitchRateTarget = axis == 1
-        ? 0
-        : pitchAnglePID.update(pitchTarget, pitch, dt, pitchIntegrate);
-
-    // 4. INNER: rate setpoints and gyro feedback -> per-axis duty corrections.
-    // Freeze I if the mixer was saturated on the previous update.
-    rollOutput = axis == 2
-        ? 0
-        : rollPID.update(rollRateTarget, rollRate, dt, !saturated);
-
-    pitchOutput = axis == 1
-        ? 0
-        : pitchPID.update(pitchRateTarget, pitchRate, dt, !saturated);
-
-    // 5. Apply motor polarity once, after both PID stages.
-    // P, I and D contributions all pass through the same polarity mapping.
-    const float motorRoll = RollMotorDirection * rollOutput;
-    const float motorPitch = PitchMotorDirection * pitchOutput;
-
-    // 6. Mix base duty and corrections for LF/RF/LR/RR.
-    // Corresponding GPIOs: 14, 15, 12, 13.
-    float mixed[] = {
-        base_ + motorRoll - motorPitch, // LF: left front.
-        base_ - motorRoll - motorPitch, // RF: right front.
-        base_ + motorRoll + motorPitch, // LR: left rear.
-        base_ - motorRoll + motorPitch  // RR: right rear.
-    };
-
-    // 7. Clamp each motor to 0-220 and round to an integer duty command.
-    // This flag reports mixer saturation, not the PID's +/-40 output limit.
-    saturated = false;
-
-    for (int n = 0; n < 4; n++) {
-      if (mixed[n] < MotorMinimum || mixed[n] > MotorMaximum) {
-        saturated = true;
-      }
-
-      duties[n] = static_cast<unsigned>(clamp(mixed[n], MotorMinimum, MotorMaximum) + 0.5f);
-    }
-
-    // 8. Stop control after more than 0.5 seconds of continuous mixer saturation.
-    saturatedFor_ = saturated ? saturatedFor_ + dt : 0;
-
-    if (saturatedFor_ > 0.5f) {
-      return fail("CONTROL_SATURATION_LIMIT");
-    }
-
-    return true;
+  for (uint8_t offset = 8; offset < 14; offset += 2) {
+    Serial.print(','); Serial.print(signed16(bytes + offset) / 65.5f, 3);
   }
-
-  // The last accepted Start base is retained after Stop for telemetry.
-  float baseDuty() const { return base_; }
-
- private:
-  // Limit user angle setpoints, not measured sensor angles.
-  bool validTargets() const {
-    return isfinite(rollTarget) && isfinite(pitchTarget) &&
-        fabsf(rollTarget) <= 10 && fabsf(pitchTarget) <= 10;
-  }
-
-  // Stop control, then retain the reason for the firmware to report to WPF.
-  bool fail(const char *reason) {
-    stop();
-    fault = reason;
-    return false;
-  }
-
-  float base_ = 0;         // Base duty accepted at Start.
-  float saturatedFor_ = 0; // Continuous mixer saturation time, in seconds.
-};
-
-} // namespace Flight
+  Serial.println();
+}
