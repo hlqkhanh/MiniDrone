@@ -1,5 +1,9 @@
 # Hướng dẫn thử và hiệu chỉnh Roll trên drone thật
 
+**Bổ sung 28/10/2026:** bỏ điều kiện START ±5° và dừng SATURATION_TRACKING. Các bước/ngưỡng cũ trong tài liệu này không mô tả hành vi mới; xem PROTOCOL.md. Giới hạn duty đầu ra và chống windup vẫn giữ.
+
+**Thay đổi code 28/10/2026:** START hiện chạy liên tục đến STOP hoặc fault, app không còn ô Duration; ENVELOPE/OTHER_AXIS_ENVELOPE đã bỏ. BENCH vẫn hữu hạn và START vẫn cần hai góc trong ±5°. Những bước bên dưới yêu cầu duration 300/1000/8000ms hoặc tự dừng ở ±15° là quy trình cũ; hiện phải kết thúc lượt bằng STOP. Xem PROTOCOL.md cho hành vi mới. Bản sửa chưa được kiểm chứng trên phần cứng.
+
 **Soạn ngày 26/10/2026 cho buổi thử ngày 27/10/2026.**
 
 **Mục tiêu:** từ góc lệch nhỏ, drone trở về gần ngang và giữ Roll ổn định trên đế một trục, có dữ liệu chứng minh. Đây là hướng dẫn tiến tới mục tiêu, không phải cam kết đạt ngay trong một buổi. Khi một điều kiện chưa đạt, ghi lại và xử lý tại bước đó.

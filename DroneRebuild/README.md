@@ -1,5 +1,7 @@
 # DroneRebuild — Roll bench v0.1
 
+**Cập nhật 28/10/2026:** RATE/ANGLE/DryRun chạy liên tục đến STOP hoặc fault. Bỏ duration, điều kiện START ±5°, ENVELOPE/OTHER_AXIS_ENVELOPE và cắt motor do SATURATION_TRACKING. Output vẫn giới hạn theo cấu hình và báo pidLimited/mixerLimited; chống windup, heartbeat, stale-control và lỗi cảm biến vẫn hoạt động. BENCH vẫn chạy 1 giây trên app (firmware tối đa 2 giây). Cần nạp firmware mới; dùng app trong `build/app-continuous`. Xem `docs/PROTOCOL.md` cho hành vi hiện tại; các hướng dẫn thử cũ có nhắc duration/envelope/góc START không còn áp dụng.
+
 Project độc lập theo `../PLAN.md`. Không tham chiếu source/build của app hoặc firmware cũ. Bản v0.2 kiểm chứng Roll hoặc Pitch, từng trục trên đế; chưa điều khiển đồng thời hai trục, chưa xác nhận bay hoặc hover. Xem `docs/ROLL_PITCH.md` để cập nhật và kiểm tra trục.
 
 **Buổi thử ngày mai:** [Hướng dẫn chi tiết kiểm tra và hiệu chỉnh Roll trên phần cứng](docs/HUONG_DAN_CAN_BANG_ROLL_THUC_TE.md).

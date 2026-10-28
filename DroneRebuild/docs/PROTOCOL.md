@@ -19,7 +19,7 @@ App phải chờ ACK và kiểm tra cấu hình board đọc lại qua T, không
 | `VERIFY 0|1` | Người vận hành xác nhận mapping/cảm biến/đế; không phải board tự đo được chiều lực |
 | `PROPS_REMOVED 0|1` | Xác nhận tháo cánh chỉ cho bench |
 | `ARM epoch` | Epoch hiện tại đọc từ ACK/T; không có phiên Armed/Running khác |
-| `START epoch mode target durationMs` | Mode 0 Rate, 1 Angle, 2 DryRun; max 10000 ms; đã calibrate, verified, Kp dương; góc đầu ≤5° |
+| `START epoch mode target durationMs` | Mode 0 Rate, 1 Angle, 2 DryRun; chạy liên tục đến STOP hoặc fault. App gửi durationMs=0; firmware bỏ qua đối số durationMs cũ. Đã calibrate, verified, Kp dương; ANGLE cần Angle P dương. Không kiểm tra ngưỡng góc lúc START. |
 | `BENCH epoch index duty durationMs` | Index LF0/RF1/LR2/RR3, duty ≤89 (≤35%), max 2000ms, cần propsRemoved và Armed |
 | `KEEPALIVE` | Chỉ chủ phiên Running; gửi mỗi 500 ms |
 | `STOP` | Mọi kết nối, ưu tiên cắt output; tăng epoch làm vô hiệu lệnh cũ |
@@ -31,7 +31,7 @@ Sau ZERO, góc trong T, điều kiện START và giới hạn controller đều 
 
 Quy đổi mounting trước khi lấy góc: quaternion sensor (w,x,y,z) → body (w,-y,x,z). Roll dùng atan2 (±180°), Pitch dùng asin (±90°); gần Pitch ±90° vẫn có singularity Euler. Rate body: -gyroY cho Roll, +gyroX cho Pitch. Không có magnetometer nên không cung cấp heading Yaw tuyệt đối. Mixer Roll = [B+r,B-r,B+r,B-r], Pitch = [B+p,B+p,B-p,B-p] theo LF/RF/LR/RR; sign mỗi trục phải xác minh thực tế.
 
-START cần cả hai góc trong ±5°. Khi chạy PID, trục không điều khiển vượt ±15° hoặc ±150°/s cũng dừng với OTHER_AXIS_ENVELOPE. BENCH vẫn là chế độ tháo cánh riêng.
+START không còn yêu cầu hai góc trong ±5°. Khi chạy, không dừng bởi góc/tốc độ vượt ngưỡng trên cả hai trục (bỏ ENVELOPE/OTHER_AXIS_ENVELOPE) hoặc bão hòa kéo dài (bỏ SATURATION_TRACKING). PID/mixer vẫn giới hạn duty và báo pidLimited/mixerLimited; chống windup vẫn hoạt động. BENCH vẫn hữu hạn. Session/gate dùng deadline=0 cho START, deadline hữu hạn cho BENCH. STOP, heartbeat, stale-control và các fault khác vẫn hoạt động.
 
 Mode telemetry 3 chỉ BENCH (không chạy PID), phân biệt với START mode 0/1/2.
 
@@ -39,7 +39,7 @@ Mode telemetry 3 chỉ BENCH (không chạy PID), phân biệt với START mode 
 
 HEALTH mỗi 500 ms: epoch, sensor available, calibrated, calCount, PWM ready, gate reason; vẫn có khi IMU lỗi để phân biệt lỗi sensor với mất transport. Log sự kiện và telemetry riêng; cấu hình cố định trong RollCore.h phải đối chiếu source ID khi phân tích.
 
-Các fault: CONFIG, SENSOR, TIMING (dt ngoài 2–20ms), ENVELOPE (góc >15°, rate >150°/s), GAINS_ZERO, TARGET, SATURATION_TRACKING (liên tục 0.5s có PID chạm biên và error >5°/s, hoặc mixer bị cắt), STALE_CONTROL, HEARTBEAT, PWM và lỗi queue.
+Các fault: CONFIG, SENSOR, TIMING (dt ngoài 2–20ms), GAINS_ZERO, TARGET, STALE_CONTROL, HEARTBEAT, PWM và lỗi queue. ENVELOPE/OTHER_AXIS_ENVELOPE/SATURATION_TRACKING đã bỏ từ 28/10/2026; DURATION chỉ còn cho BENCH. Các trường cấu hình mô phỏng maxAngle/maxRate/saturationSeconds/saturationError và mã fault số 4/7 được giữ để tương thích layout dữ liệu cũ, không còn tạo cắt motor.
 
 TCP gửi non-blocking trực tiếp qua socket, tối đa256 byte/lượt, giữ cursor khi gửi thiếu hoặc EAGAIN; không dùng `NetworkClient.availableForWrite()` vì core3.3.12 kế thừa giá trị0. App đợi INFO tối đa8s khi kết nối, ACK các lệnh thường2s, thời gian write và đóng transport có giới hạn riêng.
 

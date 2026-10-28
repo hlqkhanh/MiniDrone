@@ -8,7 +8,9 @@ inline double bound(double x, double lo, double hi) { return x < lo ? lo : x > h
 struct Config {
   double kp=0, ki=0, kd=0, angleKp=0;
   double outputLimit=20, iLimit=10, rateLimit=20, dHz=10;
+  // maxAngle/maxRate retained for the existing simulation config layout only.
   double base=80, motorSign=1, maxAngle=15, maxRate=150;
+  // Legacy simulation layout: no longer used to cut motor output.
   double saturationSeconds=0.5, saturationError=5;
   bool valid() const {
     const double all[]={kp,ki,kd,angleKp,outputLimit,iLimit,rateLimit,dHz,base,motorSign,maxAngle,maxRate,saturationSeconds,saturationError};
@@ -28,7 +30,7 @@ struct Output {
   const char* fault="NONE";
 };
 class Controller {
-  double integral_=0, previous_=0, previousError_=0, derivative_=0, limitedFor_=0;
+  double integral_=0, previous_=0, previousError_=0, derivative_=0;
   bool initialized_=false, previousMixerLimited_=false;
 public:
   void reset() { *this=Controller{}; }
@@ -38,7 +40,6 @@ public:
     if(!c.valid() || static_cast<int>(mode)<0 || static_cast<int>(mode)>2 || (axis!=Axis::Roll && axis!=Axis::Pitch)) return fail("CONFIG");
     if(!std::isfinite(command)||!std::isfinite(angle)||!std::isfinite(rate)) return fail("SENSOR");
     if(!std::isfinite(dt)||dt<0.002||dt>0.02) return fail("TIMING");
-    if(std::fabs(angle)>c.maxAngle || std::fabs(rate)>c.maxRate) return fail("ENVELOPE");
     if(c.kp<=0 || (mode==Mode::Angle && c.angleKp<=0)) return fail("GAINS_ZERO");
     if((mode==Mode::Angle && std::fabs(command)>10) || (mode!=Mode::Angle && std::fabs(command)>c.rateLimit)) return fail("TARGET");
     o.target=mode==Mode::Angle ? bound(c.angleKp*(command-angle),-c.rateLimit,c.rateLimit) : command;
@@ -60,8 +61,7 @@ public:
       o.mixerLimited |= mixed[n]<0 || mixed[n]>220;
       o.motor[n]=static_cast<unsigned>(std::floor(bound(mixed[n],0,220)+0.5));
     }
-    limitedFor_=(o.pidLimited && std::fabs(o.error)>c.saturationError) || o.mixerLimited ? limitedFor_+dt : 0;
-    if(limitedFor_>=c.saturationSeconds) return fail("SATURATION_TRACKING");
+    // Saturation is reported above; keep controlling with bounded output.
     previous_=rate; previousError_=o.error; initialized_=true; previousMixerLimited_=o.mixerLimited;
     return o;
   }
@@ -79,15 +79,16 @@ public:
     state=State::Armed; owner=client; armedAt=now; reason="ARMED"; return true;
   }
   bool start(uint32_t client,uint32_t token,uint64_t now,uint32_t durationMs) {
-    if(state!=State::Armed || token!=epoch || client!=owner || now-armedAt>=15000000 || durationMs<1 || durationMs>10000) return false;
-    state=State::Running; deadline=now+uint64_t(durationMs)*1000; sampleAt=heartbeatAt=now; reason="RUNNING"; return true;
+    // Zero means continuous control. Finite durations remain for motor BENCH.
+    if(state!=State::Armed || token!=epoch || client!=owner || now-armedAt>=15000000 || durationMs>10000) return false;
+    state=State::Running; deadline=durationMs?now+uint64_t(durationMs)*1000:0; sampleAt=heartbeatAt=now; reason="RUNNING"; return true;
   }
   void heartbeat(uint32_t client,uint64_t now) { if(client==owner && state==State::Running) heartbeatAt=now; }
   bool check(uint64_t now) {
     const char* why=nullptr;
     if(state==State::Armed && now-armedAt>=15000000) why="ARM_TIMEOUT";
     if(state==State::Running) {
-      if(now>=deadline) why="DURATION";
+      if(deadline && now>=deadline) why="DURATION";
       else if(now-sampleAt>=100000) why="STALE_CONTROL";
       else if(now-heartbeatAt>=2000000) why="HEARTBEAT";
     }

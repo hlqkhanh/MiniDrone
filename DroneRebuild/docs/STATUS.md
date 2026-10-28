@@ -1,5 +1,21 @@
 # Trạng thái kiểm chứng — cập nhật 27/10/2026
 
+## Bổ sung 28/10/2026 — bỏ góc START và cắt do bão hòa
+
+- Log phần cứng người dùng: START đã OK, sau đó motor dừng với SATURATION_TRACKING. Bản F7F5DF8CECA27C50 còn điều kiện START ±5° và bảo vệ bão hòa.
+- Bản mới bỏ cả điều kiện góc START và cắt motor SATURATION_TRACKING. Duty, pidLimited/mixerLimited và chống windup vẫn giữ; watchdog/STOP/fault cảm biến vẫn hoạt động. App không cần thay đổi thêm.
+- Native controller và wrapper PASS, gồm giữ điều khiển qua 12 giây PID saturation/mixer clipping cho Roll/Pitch, PWM hữu hạn và I không vượt giới hạn. 18 mô phỏng Roll PASS. Đã cập nhật fallback MATLAB/vector; chưa chạy MATLAB đối chiếu lại.
+- Firmware build PASS với ESP32 core 3.3.12, source ID `CD7A4E0DEE7905EB`, flash 959811 bytes, global RAM 49572 bytes. Chưa nạp bản này vào board. Các mục dưới mô tả các bản trước.
+
+## Cập nhật 28/10/2026 — START liên tục, bỏ envelope
+
+- RATE/ANGLE/DryRun không còn thời hạn START; duration trên giao thức được giữ nhưng bỏ qua, session/gate dùng deadline=0. Bỏ ENVELOPE và OTHER_AXIS_ENVELOPE khi đang chạy. START vẫn cần cả hai góc trong ±5°. BENCH vẫn có thời hạn, các watchdog/STOP và fault khác vẫn hoạt động.
+- Native regression PASS: Roll/Pitch vượt ngưỡng góc/tốc độ cũ không tự fault; session liên tục chạy gần 60 giây với heartbeat/sample mới; STOP, mất heartbeat, stale-control và deadline BENCH vẫn dừng. Controller/IMU/S-function/TCP và 18 mô phỏng Roll đều PASS. Đã cập nhật fallback MATLAB và 3600 vector C++; chưa chạy đối chiếu MATLAB trong phiên này.
+- App bỏ ô Duration, START gửi 0. Release build vào `build/app-continuous` thành công 0 warning/error; smoke render 1040×740 PASS. Bản app đang mở khóa executable ở thư mục bin cũ, nên bản mới nằm riêng, chưa thay phiên đang chạy.
+- Firmware ESP32 core 3.3.12 build PASS, source ID `F7F5DF8CECA27C50`, flash 960155 bytes, global RAM 49572 bytes. Chưa upload hoặc thử motor trên board.
+
+Các mục bên dưới ghi lại hành vi/kết quả trước thay đổi này.
+
 ## Bản 0.2 Roll / Pitch
 
 - Chọn Roll hoặc Pitch, mỗi lượt một trục trên đế. Hai cấu hình PID/sign/limit và hai mốc ngang độc lập; mặc định gain đều 0. Pitch dùng chênh lực trước–sau. Chưa điều khiển đồng thời hai trục hoặc bay tự do.

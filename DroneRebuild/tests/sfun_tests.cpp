@@ -10,9 +10,10 @@ int main() {
  mdlOutputs(&s,0);assert(s.output[3]==first); // Repeated output evaluation must not integrate again.
  assert(s.output[7]>s.output[8]);
  mdlUpdate(&s,0);mdlOutputs(&s,0);assert(s.output[3]>first);
- feedback[0]=16;mdlOutputs(&s,0);assert(s.output[13]==4);
+ feedback[0]=30;mdlOutputs(&s,0);assert(s.output[13]==0); // No angle-envelope cutoff.
+ feedback[0]=NAN;mdlOutputs(&s,0);assert(s.output[13]==2);
  for(int k=7;k<11;k++)assert(s.output[k]==0);
- mdlUpdate(&s,0);feedback[0]=0;mdlOutputs(&s,0);assert(s.output[13]==4); // Fault latched until restart.
+ mdlUpdate(&s,0);feedback[0]=0;mdlOutputs(&s,0);assert(s.output[13]==2); // Sensor fault latched until restart.
  mdlTerminate(&s);assert(s.pwork==nullptr);
  std::cout<<"PASS C++ S-function wrapper idempotence, update, fault latch, motor zero\n";
 }

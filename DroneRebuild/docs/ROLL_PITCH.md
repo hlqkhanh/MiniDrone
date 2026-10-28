@@ -1,5 +1,7 @@
 # Roll / Pitch v0.2 — kiểm chứng từng trục trên đế
 
+**Thay đổi 28/10/2026:** START chạy liên tục, bỏ điều kiện góc ±5°, duration và dừng theo ENVELOPE/OTHER_AXIS_ENVELOPE/SATURATION_TRACKING. Output và chống windup vẫn giới hạn theo cấu hình. BENCH vẫn hữu hạn; dùng PROTOCOL.md cho giao thức hiện tại.
+
 ## Cập nhật
 
 Nạp lại firmware/DroneRebuild/DroneRebuild.ino và mở app mới. INFO cần báo DroneRebuild-0.2, profile XW_Z1_SPI_ROLL_PITCH_V2. App cũ không đọc telemetry 50 trường mới. Không tự upload hay chạy motor trong bước build.
@@ -18,7 +20,7 @@ Nạp lại firmware/DroneRebuild/DroneRebuild.ino và mở app mới. INFO cầ
 3. Xác minh vị trí LF/RF/LR/RR và chiều lực từng trục. Roll sửa trái–phải; Pitch sửa trước–sau. Motor sign có thể khác giữa hai trục, không suy ra từ gain mô phỏng.
 4. Điền thông số trục đang chọn, bấm Áp dụng, kiểm tra dòng Board Roll/Pitch đã nhận đúng cấu hình. Đánh dấu lại xác nhận đế/trục/chiều lực. Mỗi lần đổi trục/lấy mốc phải xác nhận lại.
 5. Tune RATE trước ANGLE như hướng dẫn Roll, dùng lượt ngắn trên đế; dừng nếu lực làm tăng lệch. Không dùng bộ MATLAB như thông số phần cứng đã được xác nhận.
-6. Cả hai góc phải trong ±5° lúc START. Khi chạy, vượt ±15° hoặc ±150°/s ở trục không điều khiển cũng dừng. Esc/STOP, watchdog, heartbeat và thời hạn vẫn giữ.
+6. START không còn kiểm tra ngưỡng góc. Khi chạy không cắt motor theo góc/tốc độ hoặc bão hòa; cờ PID/mixer chạm biên vẫn hiển thị. Esc/STOP, watchdog và heartbeat vẫn hoạt động. START không có thời hạn; BENCH vẫn hữu hạn.
 
 ## Góc và Yaw
 

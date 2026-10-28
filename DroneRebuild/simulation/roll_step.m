@@ -15,8 +15,6 @@ elseif ~all(isfinite([command angle rate]))
  fault=2;
 elseif ~isfinite(dt) || dt<.002 || dt>.02
  fault=3;
-elseif abs(angle)>c(11) || abs(rate)>c(12)
- fault=4;
 elseif c(1)<=0 || (mode==1 && c(4)<=0)
  fault=5;
 elseif (mode==1 && abs(command)>10) || (mode~=1 && abs(command)>c(7))
@@ -47,14 +45,8 @@ pidLimited=abs(raw)>=c(5);
 r=c(10)*u;mixed=[c(9)+r c(9)-r c(9)+r c(9)-r];
 mixerLimited=any(mixed<0 | mixed>220);
 motor=floor(max(0,min(220,mixed))+.5);
-if (pidLimited && abs(e)>c(14)) || mixerLimited
- s(5)=s(5)+dt;
-else
- s(5)=0;
-end
-if s(5)>=c(13)
- s=zeros(1,7);y(14)=7;return
-end
+% Reserved legacy state slot: saturation no longer trips a motor cutoff.
+s(5)=0;
 s(2)=rate;s(3)=e;s(6)=1;s(7)=double(mixerLimited);
 y=[target e proportional s(1) d raw u motor double(pidLimited) double(mixerLimited) 0];
 end

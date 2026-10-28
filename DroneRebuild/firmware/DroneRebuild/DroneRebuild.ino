@@ -35,8 +35,8 @@ void emergency(const char* why) {
 }
 void guard(void*) {
   Gate g=snapshot(); const uint64_t now=esp_timer_get_time();
-  if(!g.stopped && g.enabled && (now>=g.deadline || now-g.sample>=100000 || now-g.hb>=2000000)) {
-    emergency(now>=g.deadline?"DURATION":now-g.sample>=100000?"STALE_CONTROL":"HEARTBEAT"); g.enabled=false;
+  if(!g.stopped && g.enabled && ((g.deadline && now>=g.deadline) || now-g.sample>=100000 || now-g.hb>=2000000)) {
+    emergency(g.deadline && now>=g.deadline?"DURATION":now-g.sample>=100000?"STALE_CONTROL":"HEARTBEAT"); g.enabled=false;
   }
   bool ok=true;
   for(int k=0;k<4;k++) ok=ledcWrite(hw::motors[k],g.enabled && !g.stopped?g.duty[k]:0) && ok;
@@ -72,7 +72,6 @@ void controlTask(void*) {
     Command cmd;
     for(int budget=0;budget<4 && xQueueReceive(commands,&cmd,0)==pdTRUE;budget++) {
       Config& cfg=configs[axis];
-      const double angle=angles[axis];
       bool ok=false; const char* response="INVALID"; unsigned epoch,duration,motor,duty,hz; int which; double value; char extra;
       if(!strcmp(cmd.text,"INFO")) {
         Line l;l.owner=cmd.owner; snprintf(l.text,sizeof(l.text),"INFO,%s,%s,%s %s,WHO_%02X,source_%s,AP_%s,STA_%s,beta_%.3f,gyroBias_%.6f_%.6f_%.6f,pwm_%d",hw::version,hw::profile,__DATE__,__TIME__,imu.identity(),rebuildSourceId,WiFi.softAPIP().toString().c_str(),WiFi.localIP().toString().c_str(),hw::beta,bias[0],bias[1],bias[2],pwmReady.load());
@@ -89,8 +88,9 @@ void controlTask(void*) {
         response="ARM";
       } else if(sscanf(cmd.text,"START %u %d %lf %u %c",&epoch,&which,&value,&duration,&extra)==4) {
         ok=calibrated && verified && cfg.valid() && cfg.kp>0 && which>=0 && which<=2 && std::isfinite(value) &&
-          std::fabs(value)<=(which==1?10:cfg.rateLimit) && std::fabs(angle)<=5 && std::fabs(angles[1-axis])<=5 && (which!=1 || cfg.angleKp>0) &&
-          session.start(cmd.owner,epoch,now,duration);
+          std::fabs(value)<=(which==1?10:cfg.rateLimit) && (which!=1 || cfg.angleKp>0) &&
+          // Keep the legacy duration argument on the wire; START is continuous.
+          session.start(cmd.owner,epoch,now,0);
         if(ok) { mode=Mode(which);target=value;bench=false;controller.reset();portENTER_CRITICAL(&gateMux);gate.reason="RUNNING";portEXIT_CRITICAL(&gateMux); } response="START";
       } else if(sscanf(cmd.text,"BENCH %u %u %u %u %c",&epoch,&motor,&duty,&duration,&extra)==4) {
         ok=props && motor<4 && duty<=89 && duration>=1 && duration<=2000 && session.start(cmd.owner,epoch,now,duration);
@@ -148,8 +148,7 @@ void controlTask(void*) {
       if(session.state==State::Running) {
         if(bench) { session.sampleAt=now;publish(true); }
         else if(calibrated) {
-          if(fabs(angles[1-axis])>15 || fabs(rates[1-axis])>150) { output=Output{};output.fault="OTHER_AXIS_ENVELOPE"; }
-          else output=controller.step(configs[axis],mode,target,angles[axis],rates[axis],dt,Axis(axis));
+          output=controller.step(configs[axis],mode,target,angles[axis],rates[axis],dt,Axis(axis));
           if(strcmp(output.fault,"NONE")) emergency(output.fault);
           else { session.sampleAt=now;publish(mode!=Mode::DryRun); }
         } else emergency("NOT_CALIBRATED");

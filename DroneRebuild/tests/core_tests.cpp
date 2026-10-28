@@ -21,14 +21,30 @@ int main() {
   c.motorSign=1;
   assert(!std::strcmp(pid.step(c,Mode::Rate,0,0,NAN,.005).fault,"SENSOR"));
   assert(!std::strcmp(pid.step(c,Mode::Rate,0,0,0,.1).fault,"TIMING"));
-  assert(!std::strcmp(pid.step(c,Mode::Rate,0,16,0,.005).fault,"ENVELOPE"));
+  // Crossing the former angle/rate envelope does not stop either axis.
+  for(auto axis:{Axis::Roll,Axis::Pitch}) {
+    pid.reset();assert(!std::strcmp(pid.step(c,Mode::Angle,0,30,0,.005,axis).fault,"NONE"));
+    pid.reset();assert(!std::strcmp(pid.step(c,Mode::Rate,0,0,200,.005,axis).fault,"NONE"));
+  }
   assert(!std::strcmp(pid.step(c,Mode::Angle,11,0,0,.005).fault,"TARGET"));
   pid.reset(); c.kp=5; c.ki=1; c.kd=0;
-  for(int n=0;n<105;n++) o=pid.step(c,Mode::Rate,20,0,0,.005);
-  // At least one continuous-saturation fault must occur, with all outputs zero.
-  pid.reset(); bool tripped=false;
-  for(int n=0;n<105;n++) { o=pid.step(c,Mode::Rate,20,0,0,.005); if(std::strcmp(o.fault,"NONE")) { tripped=true; for(auto m:o.motor) assert(m==0); break; } }
-  assert(tripped);
+  // Persistent PID/mixer saturation is reported, without shutting motors off.
+  for(auto axis:{Axis::Roll,Axis::Pitch}) {
+    pid.reset();
+    for(int n=0;n<2400;n++) {
+      o=pid.step(c,Mode::Angle,0,45,0,.005,axis);
+      assert(!std::strcmp(o.fault,"NONE") && o.pidLimited);
+      assert(std::fabs(o.u)<=c.outputLimit && std::fabs(o.i)<=c.iLimit);
+      assert(o.motor[0]>0 && o.motor[3]>0);
+    }
+    pid.reset();c.base=1;
+    for(int n=0;n<2400;n++) {
+      o=pid.step(c,Mode::Rate,20,0,0,.005,axis);
+      assert(!std::strcmp(o.fault,"NONE") && o.mixerLimited);
+      for(auto m:o.motor)assert(m<=220);
+    }
+    c.base=80;
+  }
   pid.reset(); c.kp=.1; c.ki=2; c.outputLimit=20; c.iLimit=1;
   for(int n=0;n<500;n++) o=pid.step(c,Mode::Rate,1,0,0,.005);
   assert(o.i<=1 && o.i>.9);
@@ -44,5 +60,17 @@ int main() {
   assert(!s.start(1,stale,16000100,1000));
   assert(s.arm(1,s.epoch,17000000)); assert(s.start(1,s.epoch,17000000,10000));
   s.sampleAt=19000000; assert(!s.check(19000000)); assert(!std::strcmp(s.reason,"HEARTBEAT"));
+  Session continuous;assert(continuous.arm(1,0,1000));assert(continuous.start(1,0,2000,0));
+  assert(continuous.deadline==0);
+  for(uint64_t now=2000;now<60000000;now+=50000) {
+    continuous.sampleAt=now;continuous.heartbeat(1,now);assert(continuous.check(now));
+  }
+  continuous.stop();assert(continuous.state==State::Disarmed);
+  assert(continuous.arm(1,continuous.epoch,60000000));assert(continuous.start(1,continuous.epoch,60000000,0));
+  continuous.sampleAt=62000000;assert(!continuous.check(62000000));assert(!std::strcmp(continuous.reason,"HEARTBEAT"));
+  Session staleContinuous;assert(staleContinuous.arm(1,0,1000));assert(staleContinuous.start(1,0,2000,0));
+  assert(!staleContinuous.check(102000));assert(!std::strcmp(staleContinuous.reason,"STALE_CONTROL"));
+  Session bench;assert(bench.arm(1,0,1000));assert(bench.start(1,0,2000,1000));
+  bench.sampleAt=1002000;bench.heartbeat(1,1002000);assert(!bench.check(1002000));assert(!std::strcmp(bench.reason,"DURATION"));
   std::cout<<"PASS controller, limits, anti-windup, signs, faults, session ownership, STOP epochs, deadlines\n";
 }
