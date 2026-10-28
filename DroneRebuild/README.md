@@ -1,6 +1,6 @@
 # DroneRebuild — Roll bench v0.1
 
-Project độc lập theo `../PLAN.md`. Không tham chiếu source/build của app hoặc firmware cũ. Mục tiêu là kiểm chứng Roll trên đế một trục, chưa xác nhận bay hoặc hover.
+Project độc lập theo `../PLAN.md`. Không tham chiếu source/build của app hoặc firmware cũ. Bản v0.2 kiểm chứng Roll hoặc Pitch, từng trục trên đế; chưa điều khiển đồng thời hai trục, chưa xác nhận bay hoặc hover. Xem `docs/ROLL_PITCH.md` để cập nhật và kiểm tra trục.
 
 **Buổi thử ngày mai:** [Hướng dẫn chi tiết kiểm tra và hiệu chỉnh Roll trên phần cứng](docs/HUONG_DAN_CAN_BANG_ROLL_THUC_TE.md).
 

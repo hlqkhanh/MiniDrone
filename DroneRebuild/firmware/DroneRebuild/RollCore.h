@@ -20,6 +20,7 @@ struct Config {
   }
 };
 enum class Mode { Rate=0, Angle=1, DryRun=2 };
+enum class Axis { Roll=0, Pitch=1 };
 struct Output {
   double target=0,error=0,p=0,i=0,d=0,raw=0,u=0;
   unsigned motor[4]={0,0,0,0};
@@ -31,10 +32,10 @@ class Controller {
   bool initialized_=false, previousMixerLimited_=false;
 public:
   void reset() { *this=Controller{}; }
-  Output step(const Config& c, Mode mode, double command, double angle, double rate, double dt) {
+  Output step(const Config& c, Mode mode, double command, double angle, double rate, double dt, Axis axis=Axis::Roll) {
     Output o;
     auto fail=[&](const char* why) { reset(); Output f; f.fault=why; return f; };
-    if(!c.valid() || static_cast<int>(mode)<0 || static_cast<int>(mode)>2) return fail("CONFIG");
+    if(!c.valid() || static_cast<int>(mode)<0 || static_cast<int>(mode)>2 || (axis!=Axis::Roll && axis!=Axis::Pitch)) return fail("CONFIG");
     if(!std::isfinite(command)||!std::isfinite(angle)||!std::isfinite(rate)) return fail("SENSOR");
     if(!std::isfinite(dt)||dt<0.002||dt>0.02) return fail("TIMING");
     if(std::fabs(angle)>c.maxAngle || std::fabs(rate)>c.maxRate) return fail("ENVELOPE");
@@ -52,7 +53,9 @@ public:
     o.i=integral_; o.raw=o.p+o.i+o.d; o.u=bound(o.raw,-c.outputLimit,c.outputLimit);
     o.pidLimited=std::fabs(o.raw)>=c.outputLimit;
     const double r=c.motorSign*o.u;
-    const double mixed[]={c.base+r,c.base-r,c.base+r,c.base-r};
+    // Roll: left/right. Pitch: front/rear. motorSign must be checked
+    // independently for each axis; these are commands, not measured forces.
+    const double mixed[]={c.base+r,c.base+(axis==Axis::Roll?-r:r),c.base+(axis==Axis::Roll?r:-r),c.base-r};
     for(int n=0;n<4;n++) {
       o.mixerLimited |= mixed[n]<0 || mixed[n]>220;
       o.motor[n]=static_cast<unsigned>(std::floor(bound(mixed[n],0,220)+0.5));

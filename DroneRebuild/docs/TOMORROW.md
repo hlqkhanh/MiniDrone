@@ -10,14 +10,14 @@ Source/binary đã build, app mới, cáp USB, nguồn/pin đúng loại, dụng
 
 Mở `DroneRebuild/firmware/DroneRebuild/DroneRebuild.ino`, chọn ESP32 Dev Module với Arduino-ESP32 3.3.12. Giữ các header cùng thư mục. Build qua `scripts/build.ps1` để cập nhật source ID trước khi upload. Script không tự upload. Arduino IDE upload phải dùng đúng binary/source đã ghi nhận.
 
-App mới USB baud 460800; không dùng app cũ baud 115200. Tháo cánh ở bước kiểm tra cảm biến/motor. Reset: motor phải tắt. INFO phải báo đúng source ID, WHO 70/71, profile XW_Z1_SPI_ROLL_V1 và pwm_1.
+App mới USB baud 460800; không dùng app cũ baud 115200. Tháo cánh ở bước kiểm tra cảm biến/motor. Reset: motor phải tắt. INFO phải báo đúng source ID, WHO 70/71, profile XW_Z1_SPI_ROLL_PITCH_V2 và pwm_1. Bản 0.2 chọn Roll hoặc Pitch để thử từng trục; xem ROLL_PITCH.md trước khi thử Pitch.
 
 ## 2. Cảm biến trước motor
 
 - Giữ đứng yên hết 500 mẫu; nếu chuyển động cửa sổ sẽ bắt đầu lại.
 - Ghi 60s đứng yên. Kiểm tra raw accel độ lớn gần 1g, gyro bias và rate sau bù.
 - Nghiêng Roll hai phía theo mốc ±5°/±10°: góc và rate phải đúng chiều; ghi sai số dụng cụ.
-- Không dùng ZERO để che thân bị nghiêng. Bản này không có lệnh ZERO runtime.
+- Không dùng ZERO để che thân bị nghiêng. Bản 0.2 có ZERO_ROLL/ZERO_PITCH: chỉ lấy mốc sau khi khung ngang thật, motor dừng và đã hiệu chuẩn. Reset/hiệu chuẩn lại xóa mốc.
 - Kiểm tra sai số góc tuyệt đối đủ nhỏ cho mục tiêu ±1° trước khi gọi là nghiệm thu góc thật.
 
 ## 3. Bench motor, cánh tháo

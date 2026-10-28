@@ -1,4 +1,16 @@
-# Trạng thái kiểm chứng — 26/10/2026
+# Trạng thái kiểm chứng — cập nhật 27/10/2026
+
+## Bản 0.2 Roll / Pitch
+
+- Chọn Roll hoặc Pitch, mỗi lượt một trục trên đế. Hai cấu hình PID/sign/limit và hai mốc ngang độc lập; mặc định gain đều 0. Pitch dùng chênh lực trước–sau. Chưa điều khiển đồng thời hai trục hoặc bay tự do.
+- Sửa phép tính góc: đổi quaternion sensor sang body (w,-y,x,z), rồi lấy ZYX Euler. Roll dùng atan2, Pitch asin. Không còn dùng −sensor EulerY như v0.1. Hardware mounting vẫn cần xác minh.
+- Mốc 0° yêu cầu mẫu mới, đã hiệu chuẩn, đứng yên ở cả ba gyro, motor dừng. START kiểm tra cả hai góc ±5°; khi chạy, trục không điều khiển vượt ±15°/±150°/s cũng dừng. Đổi trục/lấy mốc xóa VERIFY/reset PID.
+- T50 bổ sung axis và hai cặp góc/rate. App đọc T45 cũ cho Roll hoặc T50 mới; biểu đồ hai góc, tốc độ/PID trục đang chạy, chọn trục không tự sao chép gains.
+- Native tests PASS: mixer Pitch/sign, mapping góc kết hợp Roll/Pitch, giữ tilt qua world-Yaw180° ở 9 tư thế (sai số <0.15°), Roll qua90°, bù mốc và toàn bộ test/simulation Roll trước đó.
+- Firmware compile PASS: source ID BCF398CC0AD7C3AD, flash960483 bytes, global RAM49572 bytes. WPF Release build0 warning/error, render Pitch1320×900 và1040×740 PASS. Loopback PASS cả T50 Pitch (mapping, history reset khi đổi trục, loại NaN) và các ca kết nối cũ; không kết nối hoặc ARM drone trong test.
+- Người dùng đã xác nhận kết nối Wi-Fi/IMU trên bản trước và chỉnh lại cơ khí IMU. Bản 0.2 chưa được nạp/thử nghiệm thu vật lý. Mô hình động lực/Simulink vẫn là Roll, chưa nhận dạng plant Pitch.
+
+Các mục bên dưới ghi lại lịch sử v0.1; dùng ROLL_PITCH.md và PROTOCOL.md cho hành vi hiện tại.
 
 ## Đã chạy trên máy Windows
 
@@ -57,3 +69,13 @@ Kết quả trên là ảnh xác nhận của người dùng, chưa có file d�
 - Trạng thái, dữ liệu mô phỏng, cấu hình board đọc lại và điều kiện thao tác được thể hiện rõ hơn; nút chưa đủ điều kiện bị khóa.
 - Build Release WPF thành công, 0 warning/error. Render smoke trên CSV synthetic: Roll, bench, empty/disconnected, kích thước 1320×900 và 1040×740. Kiểm tra ảnh không thấy thành phần bị tràn ngang; phần cấu hình cuộn riêng.
 - Chưa kiểm tra thao tác với ESP32 thực trong lần cập nhật UI. Firmware/controller không thay đổi bởi cập nhật này.
+
+## Sửa kết nối USB/TCP 27/10/2026
+
+- Phát hiện từ source Arduino-ESP32 3.3.12: `NetworkClient` không override `Print::availableForWrite()`, hàm kế thừa luôn trả0. Firmware cũ vì vậy không gửi TCP và ngắt vì backpressure. Đã chuyển sang một lần socket `send(..., MSG_DONTWAIT)` tối đa256 byte mỗi vòng, có cursor/partial write, retry EAGAIN/EWOULDBLOCK/EINTR và xử lý đóng socket.
+- App bỏ FlushAsync trên mỗi lệnh serial, đặt giới hạn cả chờ write lock/write/command lock, INFO bắt tay chờ tối đa8s. Khi thất bại, đóng transport mà không chờ gửi STOP lại trên đường đang lỗi; bật lại kết nối. Disconnect có thể hủy cả khi đang bắt tay. Callback reader của kết nối cũ không cập nhật lên phiên mới.
+- Test WPF thực qua localhost fake board PASS: ACK đúng + telemetry chia thành hai gói; INFO chậm2.5s; peer đóng trước ACK; ACK sai request ID. Hai tình huống lỗi đều có thời gian chờ giới hạn, tài nguyên được dọn và nút kết nối lại được bật. Test không kết nối drone, không gửi ARM/START.
+- Native TCP sender regression PASS: short writes, EAGAIN, closed socket, chunk limit. Controller/estimator không thay đổi bởi sửa này.
+- Cần upload firmware mới để sửa Wi-Fi trên board, và mở app mới. Chưa có xác nhận kết nối phần cứng sau sửa từ người dùng.
+- Kiểm tra bổ sung: stream giả không cho Flush xác nhận lệnh được gửi không gọi Flush; stream giả cố tình bỏ qua cancellation xác nhận app vẫn timeout write và nhả khóa. Chuyển callback reader ra khỏi UI context, cho ngắt trong lúc đang kết nối, không để reader cũ sửa trạng thái phiên mới.
+- Firmware cuối sau sửa build thành công với source ID `9610E96790911A9C`, flash khoảng957KB, global RAM khoảng49KB. Các biến đếm chia sẻ chuyển sang atomic; phát hiện TCP disconnect không dựa vào `operator bool()` vốn cũng gọi `connected()`.

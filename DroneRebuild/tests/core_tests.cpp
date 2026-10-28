@@ -9,6 +9,11 @@ int main() {
   assert(!std::strcmp(pid.step(c,Mode::Rate,0,0,0,.005).fault,"GAINS_ZERO"));
   c.kp=.4; c.ki=.1; c.kd=.01; c.angleKp=2;
   auto o=pid.step(c,Mode::Rate,5,0,0,.005); assert(o.u>0 && o.motor[0]>o.motor[1]);
+  pid.reset();auto pitch=pid.step(c,Mode::Rate,5,0,0,.005,Axis::Pitch);
+  assert(pitch.u>0 && pitch.motor[0]==pitch.motor[1] && pitch.motor[2]==pitch.motor[3] && pitch.motor[0]>pitch.motor[2]);
+  pid.reset();c.motorSign=-1;pitch=pid.step(c,Mode::Rate,5,0,0,.005,Axis::Pitch);
+  assert(pitch.motor[0]<pitch.motor[2]);c.motorSign=1;
+  assert(!std::strcmp(pid.step(c,Mode::Rate,0,0,0,.005,static_cast<Axis>(2)).fault,"CONFIG"));
   pid.reset(); pid.step(c,Mode::Rate,0,0,0,.005);
   o=pid.step(c,Mode::Rate,5,0,0,.005); assert(o.d==0); // No setpoint derivative kick.
   o=pid.step(c,Mode::Rate,5,0,10,.005); assert(o.d<0);

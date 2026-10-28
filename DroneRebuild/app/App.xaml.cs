@@ -10,7 +10,15 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var window = new MainWindow();MainWindow=window;
-        if(e.Args.Length>=3 && e.Args[0]=="--smoke")
+        if(e.Args.Length==2 && e.Args[0]=="--connection-test")
+        {
+            window.Left=-10000;window.ShowInTaskbar=false;window.Show();
+            window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(async()=>{
+                try{File.WriteAllText(e.Args[1],await window.CheckConnections());Shutdown(0);}
+                catch(Exception ex){File.WriteAllText(e.Args[1],ex.ToString());Shutdown(1);}
+            }));
+        }
+        else if(e.Args.Length>=3 && e.Args[0]=="--smoke")
         {
             if(e.Args.Length>=5) { window.Width=double.Parse(e.Args[3],System.Globalization.CultureInfo.InvariantCulture);window.Height=double.Parse(e.Args[4],System.Globalization.CultureInfo.InvariantCulture); }
             window.Left=-10000;window.ShowInTaskbar=false;

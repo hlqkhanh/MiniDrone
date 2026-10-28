@@ -169,7 +169,7 @@ Documents có thể được chuyển sang OneDrive; đường dẫn thực củ
 3. Nếu cửa sổ mẫu liên tục bắt đầu lại, kiểm tra chuyển động, rung, nguồn và dây. Không tăng ngưỡng calibration để bỏ qua vấn đề.
 4. Sau calibration, bấm **INFO** lần nữa để ghi bias mới.
 
-Calibration đo gyro bias, không tự đặt lại góc thành 0. Bản này không có nút ZERO firmware. Nếu thân ngang thật nhưng góc vẫn lệch đáng kể, kiểm tra mounting/ước lượng trước khi tuning.
+Calibration đo gyro bias, không tự đặt lại góc thành 0. Bản 0.2 có nút lấy mốc 0° riêng cho Roll/Pitch, chỉ dùng khi motor dừng và khung đã ngang thật. Reset/hiệu chuẩn lại xóa mốc. Nếu góc lệch đáng kể, kiểm tra mounting/ước lượng trước khi tuning.
 
 ### 6.2. Đứng yên 60 giây
 
@@ -189,7 +189,7 @@ Không tự đặt một ngưỡng nhiễu nhỏ rồi kết luận đạt nếu
 2. Từ ngang, nghiêng khoảng +5°, về 0°, −5°, về 0°. Đối chiếu dụng cụ góc.
 3. Trong lúc góc đang tăng theo chiều dương, gyro Roll phải có chiều phù hợp; giữ yên ở góc mới thì rate trở về gần 0 dù góc khác 0.
 4. Lặp lại với ±10° khi vẫn không có motor.
-5. Kiểm tra riêng Pitch không bị nhầm thành Roll chính. Quy ước code tạm là Roll = −sensor Euler Y, rate = −gyroY; nếu mounting thật khác, cần sửa cấu hình/source tại một chỗ, test và build lại.
+5. Kiểm tra riêng Pitch không bị nhầm thành Roll chính. Bản v0.2 đổi quaternion sang hệ body X=−sensorY, Y=sensorX, Z=sensorZ trước khi tính Euler; rate Roll=−gyroY, Pitch=gyroX. Nếu mounting thật khác cần sửa phép đổi trục, test và build lại. Không dùng công thức −sensor Euler Y của v0.1 để đối chiếu bản mới.
 
 Qua bước cảm biến khi đúng trục/chiều và góc tương ứng mốc cơ khí. PLAN dùng ±2° làm tiêu chí ban đầu Stage2, nhưng để kết luận thân thật giữ ±1° thì phép đo tổng thể phải được xác nhận chính xác hơn; không nhầm sai số bám số trên app với sai số góc vật lý.
 

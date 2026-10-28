@@ -5,6 +5,29 @@
 #include "Hardware.h"
 
 struct ImuSample { double ax=0,ay=0,az=0,gx=0,gy=0,gz=0; };
+// A fresh, consecutive half-second of stationary samples is required to zero.
+class RollLevel {
+  unsigned count_=0;
+  unsigned at_=0;
+  double values_[100]={},sum_=0,offset_=0;
+public:
+  void resetWindow() { count_=0;at_=0;sum_=0; }
+  void reset() { resetWindow();offset_=0; }
+  void observe(double raw,double rate,double norm) {
+    if(!isfinite(raw)||!isfinite(rate)||!isfinite(norm)||fabs(rate)>1 || norm<.95 || norm>1.05) { resetWindow();return; }
+    if(count_==100)sum_-=values_[at_];else count_++;
+    values_[at_]=raw;at_=(at_+1)%100;sum_+=raw;
+  }
+  bool ready()const {
+    if(count_<100 || fabs(sum_/count_)>10)return false;
+    double low=values_[0],high=low;
+    for(double v:values_) { low=fmin(low,v);high=fmax(high,v); }
+    return high-low<=.5;
+  }
+  bool zero() { if(!ready())return false;offset_=sum_/count_;return true; }
+  double angle(double raw)const { return raw-offset_; }
+  double offset()const { return offset_; }
+};
 class Imu {
   uint8_t identity_=0;
   void read(uint8_t reg,uint8_t* b,size_t n) {
@@ -70,5 +93,8 @@ public:
     if(!isfinite(norm)||norm<.1) return false;
     w/=norm;x/=norm;y/=norm;z/=norm; return true;
   }
-  double roll()const { return hw::rollSensorSign*asin(fmax(-1.,fmin(1.,2*(w*y-z*x))))*180/3.141592653589793; }
+  // Change quaternion basis before extracting body ZYX Euler angles.
+  // Sensor quaternion vector (x,y,z) becomes body (-y,x,z).
+  double roll()const { return atan2(2*(-w*y+x*z),1-2*(y*y+x*x))*180/3.141592653589793; }
+  double pitch()const { return asin(fmax(-1.,fmin(1.,2*(w*x+y*z))))*180/3.141592653589793; }
 };
