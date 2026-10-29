@@ -63,3 +63,15 @@ TCP timeout và app mất kết nối không tự khởi động lại motor. K�
 - [Espressif LEDC](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/ledc.html): PWM API core 3.x.
 
 Không sao chép gain từ các hệ thống này. Tham số plant và gain trong mô phỏng là minh họa, không phải bản nhận dạng drone 8520.
+
+## Tab 3D IMU
+
+Tab **3D IMU** dùng lại model drone của ứng dụng cũ, có xoay camera và zoom. **Hiệu chỉnh yaw** đặt yaw hiện tại về 0° ở phần hiển thị; roll/pitch luôn theo góc IMU trước bù mốc cân bằng PID. Cần build/nạp firmware mới có telemetry T53 để đủ ba góc. App vẫn đọc T45/T50 cho đồ thị nhưng sẽ báo chờ dữ liệu ở tab 3D. Yaw là hướng tương đối từ gyro và có thể trôi.
+
+### Thu phóng đồ thị
+
+Trong tab Đồ thị PID: cuộn chuột để zoom thời gian tại vị trí con trỏ (đồng bộ cả bốn đồ thị), Ctrl + cuộn để zoom trục giá trị của đồ thị đang trỏ, kéo chuột trái để di chuyển. Có nút −/+; bấm đúp hoặc **Theo dõi mới nhất** để đặt lại thang tự động và cửa sổ 12 giây mới nhất. Khi xem lại, dữ liệu vẫn được nhận/ghi log; chỉ phạm vi hiển thị dừng chạy theo. Chỉ xem lại được dữ liệu còn trong bộ đệm 1200 mẫu.
+
+## Chỉnh Inner / Outer cho Roll và Pitch
+
+Chọn trục Roll/Pitch; mỗi trục giữ riêng sáu gain Inner Kp/Ki/Kd và Outer Kp/Ki/Kd. Chọn **Inner · PID tốc độ (RATE)** để chỉnh vòng tốc độ trước, mục tiêu °/s. Chọn **Outer + Inner · PID góc (ANGLE)** để dùng cả hai vòng, mục tiêu độ. Bấm Áp dụng để gửi cấu hình của trục đã chọn; kiểm tra gain board trả về trong phần cấu hình đã nhận. Cần nạp firmware T55 mới cho Ki/Kd Outer; mặc định bằng 0. Đây vẫn là chế độ thử một trục mỗi lượt trên đế, không điều khiển đồng thời hai trục.

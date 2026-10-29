@@ -44,3 +44,21 @@ Các fault: CONFIG, SENSOR, TIMING (dt ngoài 2–20ms), GAINS_ZERO, TARGET, STA
 TCP gửi non-blocking trực tiếp qua socket, tối đa256 byte/lượt, giữ cursor khi gửi thiếu hoặc EAGAIN; không dùng `NetworkClient.availableForWrite()` vì core3.3.12 kế thừa giá trị0. App đợi INFO tối đa8s khi kết nối, ACK các lệnh thường2s, thời gian write và đóng transport có giới hạn riêng.
 
 Mặc định output ±20 duty, motor 0–220, base 1–180, rate target ±20°/s, Angle target ±10°. Đổi các giới hạn cố định cần sửa source, chạy test và build lại. Không tự dùng các ngưỡng v0.1 làm khẳng định phù hợp với mọi bố trí đế.
+
+## Góc IMU cho tab 3D
+
+T53 giữ nguyên 50 trường trước và thêm 50 `imuRoll`, 51 `imuPitch`, 52 `imuYaw` (độ, body ZYX). Đây là góc estimator trước bù ZERO_ROLL/ZERO_PITCH. Yaw tương đối từ gyro, không phải hướng la bàn tuyệt đối.
+
+App đọc T45/T50/T53. Tab 3D cần T53; với firmware cũ app hiển thị chờ góc IMU, không dựng góc còn thiếu. Nút **Hiệu chỉnh yaw** lưu mốc yaw trong app và chỉ trừ mốc đó; roll/pitch luôn theo IMU. Mốc yaw xóa khi ngắt/kết nối lại. Không gửi ZERO_ROLL, ZERO_PITCH hoặc CALIBRATE khi bấm nút này. Các nút lấy mốc cân bằng PID và hiệu chuẩn gyro vẫn riêng biệt.
+
+CSV mới có 53 cột; các góc 3D để trống khi nhận firmware cũ.
+
+## Inner / Outer PID
+
+Firmware mới gửi T55, giữ nguyên T53 và thêm 53 `angleKi`, 54 `angleKd` của trục đang chọn. App đọc T45/T50/T53/T55.
+
+`CONFIG_CASCADE innerKp innerKi innerKd outerKp outerKi outerKd base motorSign outputLimit` cập nhật cả hai vòng của trục đang chọn, chỉ khi Disarmed/Fault. Mỗi trục giữ cấu hình riêng trong RAM. Lệnh xóa VERIFY, reset trạng thái PID và output. `CONFIG` cũ vẫn dùng được và giữ Ki/Kd Outer hiện tại.
+
+RATE chỉ chạy Inner PID (°/s → duty). ANGLE chạy Outer PID (° → mục tiêu °/s, giới hạn ±rateLimit) rồi Inner PID. Outer dùng tích phân hình thang, giới hạn I ±rateLimit, chống windup khi target rate/Inner/mixer bão hòa; D trên góc đo, lọc bằng dHz để tránh kick khi đổi setpoint. STOP/ARM/START/đổi trục/cấu hình reset cả hai vòng. Outer Kp 0–5, Ki 0–2, Kd 0–1. Mặc định Ki/Kd Outer = 0 nên giữ hành vi P góc cũ. App firmware cũ chỉ áp dụng được Outer P; muốn Ki/Kd khác 0 cần nạp firmware T55.
+
+Các mô hình MATLAB/Simulink với layout cấu hình 14 giá trị hiện tại vẫn dùng Outer Ki/Kd = 0; chưa mô phỏng các gain Outer mới qua layout đó.

@@ -23,9 +23,10 @@ public partial class App : Application
             if(e.Args.Length>=5) { window.Width=double.Parse(e.Args[3],System.Globalization.CultureInfo.InvariantCulture);window.Height=double.Parse(e.Args[4],System.Globalization.CultureInfo.InvariantCulture); }
             window.Left=-10000;window.ShowInTaskbar=false;
             window.Show();
-            window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(()=>
+            window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(async ()=>
             {
                 try {
+                    await window.LoadDroneModel();
                     window.LoadReplay(e.Args[1]);
                     if(e.Args.Length>=6)window.SetPreviewScenario(e.Args[5]);
                     window.UpdateLayout();

@@ -12,10 +12,11 @@ struct Config {
   double base=80, motorSign=1, maxAngle=15, maxRate=150;
   // Legacy simulation layout: no longer used to cut motor output.
   double saturationSeconds=0.5, saturationError=5;
+  double angleKi=0, angleKd=0;
   bool valid() const {
-    const double all[]={kp,ki,kd,angleKp,outputLimit,iLimit,rateLimit,dHz,base,motorSign,maxAngle,maxRate,saturationSeconds,saturationError};
+    const double all[]={kp,ki,kd,angleKp,outputLimit,iLimit,rateLimit,dHz,base,motorSign,maxAngle,maxRate,saturationSeconds,saturationError,angleKi,angleKd};
     for(double x:all) if(!std::isfinite(x)) return false;
-    return kp>=0 && kp<=5 && ki>=0 && ki<=2 && kd>=0 && kd<=0.2 && angleKp>=0 && angleKp<=5 &&
+    return kp>=0 && kp<=5 && ki>=0 && ki<=2 && kd>=0 && kd<=0.2 && angleKp>=0 && angleKp<=5 && angleKi>=0 && angleKi<=2 && angleKd>=0 && angleKd<=1 &&
       outputLimit>0 && outputLimit<=40 && iLimit>=0 && iLimit<=outputLimit && rateLimit>0 && rateLimit<=45 &&
       dHz>0 && dHz<=50 && base>=1 && base<=180 && std::fabs(motorSign)==1 &&
       maxAngle>0 && maxAngle<=30 && maxRate>0 && maxRate<=300 && saturationSeconds>0 && saturationSeconds<=2 && saturationError>0;
@@ -32,6 +33,8 @@ struct Output {
 class Controller {
   double integral_=0, previous_=0, previousError_=0, derivative_=0;
   bool initialized_=false, previousMixerLimited_=false;
+  double angleIntegral_=0, previousAngleError_=0, previousAngle_=0, angleDerivative_=0;
+  bool angleInitialized_=false, previousInnerLimited_=false;
 public:
   void reset() { *this=Controller{}; }
   Output step(const Config& c, Mode mode, double command, double angle, double rate, double dt, Axis axis=Axis::Roll) {
@@ -42,7 +45,21 @@ public:
     if(!std::isfinite(dt)||dt<0.002||dt>0.02) return fail("TIMING");
     if(c.kp<=0 || (mode==Mode::Angle && c.angleKp<=0)) return fail("GAINS_ZERO");
     if((mode==Mode::Angle && std::fabs(command)>10) || (mode!=Mode::Angle && std::fabs(command)>c.rateLimit)) return fail("TARGET");
-    o.target=mode==Mode::Angle ? bound(c.angleKp*(command-angle),-c.rateLimit,c.rateLimit) : command;
+    if(mode==Mode::Angle) {
+      const double error=command-angle;
+      const double alpha=dt/(dt+1/(6.283185307179586*c.dHz));
+      const double rawD=angleInitialized_ ? -(angle-previousAngle_)/dt : 0;
+      angleDerivative_+=alpha*(rawD-angleDerivative_);
+      const double ie=angleInitialized_ ? .5*(error+previousAngleError_) : error;
+      const double candidate=bound(angleIntegral_+c.angleKi*ie*dt,-c.rateLimit,c.rateLimit);
+      const double p=c.angleKp*error,d=c.angleKd*angleDerivative_;
+      const double trial=p+candidate+d;
+      if((!previousInnerLimited_ && !previousMixerLimited_ && std::fabs(trial)<=c.rateLimit) || error*trial<0)angleIntegral_=candidate;
+      o.target=bound(p+angleIntegral_+d,-c.rateLimit,c.rateLimit);
+      previousAngle_=angle;previousAngleError_=error;angleInitialized_=true;
+    } else {
+      o.target=command;angleIntegral_=angleDerivative_=0;angleInitialized_=false;
+    }
     o.error=o.target-rate; o.p=c.kp*o.error;
     const double rawD=initialized_ ? -(rate-previous_)/dt : 0;
     const double alpha=dt/(dt+1/(6.283185307179586*c.dHz));
@@ -62,7 +79,7 @@ public:
       o.motor[n]=static_cast<unsigned>(std::floor(bound(mixed[n],0,220)+0.5));
     }
     // Saturation is reported above; keep controlling with bounded output.
-    previous_=rate; previousError_=o.error; initialized_=true; previousMixerLimited_=o.mixerLimited;
+    previous_=rate; previousError_=o.error; initialized_=true; previousMixerLimited_=o.mixerLimited;previousInnerLimited_=o.pidLimited;
     return o;
   }
 };

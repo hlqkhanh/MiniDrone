@@ -96,5 +96,6 @@ public:
   // Change quaternion basis before extracting body ZYX Euler angles.
   // Sensor quaternion vector (x,y,z) becomes body (-y,x,z).
   double roll()const { return atan2(2*(-w*y+x*z),1-2*(y*y+x*x))*180/3.141592653589793; }
+  double yaw()const { return atan2(2*(w*z-x*y),1-2*(x*x+z*z))*180/3.141592653589793; }
   double pitch()const { return asin(fmax(-1.,fmin(1.,2*(w*x+y*z))))*180/3.141592653589793; }
 };

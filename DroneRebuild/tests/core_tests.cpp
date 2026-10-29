@@ -49,6 +49,33 @@ int main() {
   for(int n=0;n<500;n++) o=pid.step(c,Mode::Rate,1,0,0,.005);
   assert(o.i<=1 && o.i>.9);
   c.motorSign=0; assert(!c.valid()); c.motorSign=1;
+  // Outer loop gains are independent per axis and leave Rate mode unchanged.
+  Config cascade;cascade.kp=.2;cascade.angleKp=2;cascade.angleKi=.5;cascade.angleKd=.1;
+  for(auto axis:{Axis::Roll,Axis::Pitch}) {
+    pid.reset();auto first=pid.step(cascade,Mode::Angle,1,0,0,.005,axis);
+    assert(first.target>2 && first.target<2.01);
+    for(int n=0;n<100;n++)o=pid.step(cascade,Mode::Angle,1,0,0,.005,axis);
+    assert(o.target>first.target && o.target<3);
+    pid.reset();first=pid.step(cascade,Mode::Angle,0,0,0,.005,axis);
+    o=pid.step(cascade,Mode::Angle,1,0,0,.005,axis);
+    assert(o.target>2 && o.target<2.01); // no derivative kick on angle setpoint
+    o=pid.step(cascade,Mode::Angle,1,.01,0,.005,axis);
+    assert(o.target<1.98); // derivative responds to measured angle
+    pid.reset();
+    for(int n=0;n<2000;n++)o=pid.step(cascade,Mode::Angle,10,-40,0,.005,axis);
+    assert(o.target<=cascade.rateLimit);
+    o=pid.step(cascade,Mode::Angle,0,0,0,.005,axis);
+    assert(o.target<=0); // saturated angle error did not wind up Outer I
+    pid.reset();first=pid.step(cascade,Mode::Rate,3,8,0,.005,axis);
+    Config innerOnly=cascade;innerOnly.angleKi=innerOnly.angleKd=0;
+    Controller reference;auto expected=reference.step(innerOnly,Mode::Rate,3,8,0,.005,axis);
+    assert(first.target==3 && first.u==expected.u);
+    pid.reset();o=pid.step(cascade,Mode::Angle,0,0,0,.005,axis);assert(o.target==0);
+  }
+  Config rollConfig=cascade,pitchConfig=cascade;pitchConfig.angleKi=.2;
+  assert(rollConfig.angleKi==.5 && pitchConfig.angleKi==.2);
+  cascade.angleKi=-1;assert(!cascade.valid());cascade.angleKi=.5;
+  cascade.angleKd=NAN;assert(!cascade.valid());
   Session s; assert(!s.start(1,0,1000,1000)); assert(s.arm(1,0,1000));
   assert(!s.arm(2,0,1500)); // Armed ownership cannot be stolen.
   assert(!s.start(2,0,2000,1000)); assert(s.start(1,0,2000,1000));

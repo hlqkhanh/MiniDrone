@@ -47,6 +47,11 @@ int main() {
     a.initialize(pose);assert(fabs(a.roll()-phi)<1e-8);
   }
   s.ax=0;s.az=1;a.initialize(s);
+  s.gz=90;
+  for(int n=0;n<200;n++)assert(a.update(s,0,0,0,.005));
+  assert(std::fabs(a.yaw()-90)<.01);
+  assert(std::fabs(a.roll())<1e-8 && std::fabs(a.pitch())<1e-8);
+  s.gz=0;a.initialize(s);
   s.gy=-10;
   // High acceleration suppresses accel correction, exposing gyro sign.
   s.az=2;

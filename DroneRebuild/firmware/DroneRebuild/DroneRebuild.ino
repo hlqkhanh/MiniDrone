@@ -113,7 +113,8 @@ void controlTask(void*) {
         else if(sscanf(cmd.text,"TELEMETRY %u %c",&hz,&extra)==1 && (hz==50 || hz==100)) { telem=hz;ok=true;response="TELEMETRY"; }
         else {
           Config next=cfg;
-          if(sscanf(cmd.text,"CONFIG %lf %lf %lf %lf %lf %lf %lf %c",&next.kp,&next.ki,&next.kd,&next.angleKp,&next.base,&next.motorSign,&next.outputLimit,&extra)==7 && next.valid()) { if(next.motorSign!=cfg.motorSign)verified=false;cfg=next;controller.reset();ok=true;response="CONFIG"; }
+          if(sscanf(cmd.text,"CONFIG_CASCADE %lf %lf %lf %lf %lf %lf %lf %lf %lf %c",&next.kp,&next.ki,&next.kd,&next.angleKp,&next.angleKi,&next.angleKd,&next.base,&next.motorSign,&next.outputLimit,&extra)==9 && next.valid()) { verified=false;cfg=next;controller.reset();output=Output{};ok=true;response="CONFIG_CASCADE"; }
+          else if(sscanf(cmd.text,"CONFIG %lf %lf %lf %lf %lf %lf %lf %c",&next.kp,&next.ki,&next.kd,&next.angleKp,&next.base,&next.motorSign,&next.outputLimit,&extra)==7 && next.valid()) { if(next.motorSign!=cfg.motorSign)verified=false;cfg=next;controller.reset();ok=true;response="CONFIG"; }
         }
       } else response="STOP_FIRST";
       if(!ok && session.state==State::Armed && (!strncmp(cmd.text,"START",5)||!strncmp(cmd.text,"BENCH",5))) emergency("START_REJECTED");
@@ -164,7 +165,7 @@ void controlTask(void*) {
           output.pidLimited,output.mixerLimited,dt,(unsigned long)missed,(unsigned long)late,(unsigned long)droppedTelemetry,(unsigned long)droppedReplies,
           gateNow.reason,calibrated,verified,props,cfg.kp,cfg.ki,cfg.kd,cfg.angleKp,cfg.base,cfg.motorSign,cfg.outputLimit,target);
         const size_t used=strlen(l.text);
-        snprintf(l.text+used,sizeof(l.text)-used,",%u,%.6f,%.6f,%.6f,%.6f",axis,angles[0],rates[0],angles[1],rates[1]);
+        snprintf(l.text+used,sizeof(l.text)-used,",%u,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",axis,angles[0],rates[0],angles[1],rates[1],attitude.roll(),attitude.pitch(),attitude.yaw(),cfg.angleKi,cfg.angleKd);
         if(xQueueSend(samples,&l,0)!=pdTRUE) droppedTelemetry++;
       }
     }
