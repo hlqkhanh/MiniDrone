@@ -28,7 +28,19 @@ public partial class MainWindow : Window
     private int latestMode;
     private int boardAxis;
     private int telemetryAxis;
-    private bool pitchSupported, outerPidSupported;
+    private bool pitchSupported, outerPidSupported, dualSupported, applying;
+    private int appliedScope=-1;
+    private readonly string[]?[] boardSettings=new string[]?[2];
+    private readonly bool[] gainsEdited=new bool[2];
+    private bool loadingEditor;
+    private long settingsRevision;
+    private readonly long[] axisRevision=new long[2];
+    private TextBox[] GainBoxes()=>[Kp,Ki,Kd,AngleKp,BaseDuty,Sign,Limit,Target,AngleKi,AngleKd];
+    private void LoadAxisEditor() {
+        loadingEditor=true;
+        try { var boxes=GainBoxes();for(int k=0;k<boxes.Length;k++)boxes[k].Text=axisSettings[editedAxis][k]; }
+        finally { loadingEditor=false; }
+    }
     private readonly string[][] axisSettings = [ ["0","0","0","0","80","1","20","0","0","0"], ["0","0","0","0","80","1","20","0","0","0"] ];
     private int editedAxis;
     private int connectionGeneration;
@@ -45,6 +57,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        foreach(var box in GainBoxes())box.TextChanged+=(_,_)=>{ if(IsLoaded && !loadingEditor)gainsEdited[editedAxis]=true; };
+        BaseDuty.TextChanged+=(_,_)=>{
+            if(!IsLoaded || loadingEditor || RunAxes.SelectedIndex!=2)return;
+            axisSettings[0][4]=axisSettings[1][4]=BaseDuty.Text;
+            gainsEdited[0]=gainsEdited[1]=true;
+        };
         heartbeat.Tick += async (_, _) => { if (runningHere && !stopping) await Act(async () => await Request("KEEPALIVE")); };
         display.Tick += (_, _) => { if (stream != null && !connecting && (DateTime.UtcNow - received).TotalSeconds > 1) Status.Text = received==DateTime.MinValue?"Đã mở kết nối · chưa có dữ liệu IMU. Xem Thông tin board và nhật ký.":"Dữ liệu đã cũ · chưa xác định trạng thái board. Gửi STOP để kết thúc phiên."; UpdateUi(); Draw(); };
         display.Start(); heartbeat.Start();
@@ -111,7 +129,7 @@ public partial class MainWindow : Window
     {
         if(connecting)return;connecting=true;UpdateUi();
         try {
-            await Disconnect(); replay = false;pitchSupported=false;outerPidSupported=false;boardAxis=0; history.Clear();latest=null;ResetPlotView();AcceptedSummary.Text="Chưa nhận cấu hình từ board.";
+            await Disconnect(); replay = false;dualSupported=false;appliedScope=-1;pitchSupported=false;outerPidSupported=false;boardSettings[0]=boardSettings[1]=null;boardAxis=0; history.Clear();latest=null;ResetPlotView();AcceptedSummary.Text="Chưa nhận cấu hình từ board.";
             cancellation=new CancellationTokenSource();var token=cancellation.Token;
             var generation=connectionGeneration;
             if (Transport.SelectedIndex == 0) {
@@ -148,15 +166,16 @@ public partial class MainWindow : Window
     private void Receive(string line)
     {
         var f = line.Split(',');
+        if(f[0]=="INFO" && f.Contains("DUAL_AXIS_V1"))dualSupported=true;
         if (f.Length >= 5 && f[0] == "ACK" && uint.TryParse(f[1], out var n) && uint.TryParse(f[3], out var ep))
         { epoch=ep; Event(line); if (pending.TryGetValue(n, out var p)) p.TrySetResult(line); return; }
-        if ((f.Length == 45 || f.Length==50 || f.Length==53 || f.Length==55) && f[0] == "T")
+        if ((f.Length == 45 || f.Length==50 || f.Length==53 || f.Length==55 || f.Length==56) && f[0] == "T")
         {
 
             var v = new double[21];
             int[] indices = [2,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,44];
             for (int k=0;k<indices.Length;k++) { if (indices[k]>=f.Length) v[k]=0; else if(!double.TryParse(f[indices[k]], NumberStyles.Float, CultureInfo.InvariantCulture, out v[k]) || !double.IsFinite(v[k])) { Event("Rejected invalid telemetry");return; } }
-            if(f.Length==55) {
+            if(f.Length>=55) {
                 if(!double.TryParse(f[53],NumberStyles.Float,CultureInfo.InvariantCulture,out var aki) || !double.IsFinite(aki) || !double.TryParse(f[54],NumberStyles.Float,CultureInfo.InvariantCulture,out var akd) || !double.IsFinite(akd))return;
             }
             if(f.Length>=50) {
@@ -170,8 +189,20 @@ public partial class MainWindow : Window
                 attitudeDisplay.Update(angles[0],angles[1],angles[2]);
                 orientationReceived=DateTime.UtcNow;
             } else { attitudeDisplay.Reset();orientationReceived=default; }
-            outerPidSupported=f.Length==55;
-            telemetryLog?.WriteLine(f.Length==55?line:f.Length==53?line+",,":f.Length==50?line+",,,,,":line+",0,"+f[13]+","+f[14]+",,,,,,,");
+            int[] cfgIndices=[37,38,39,40,41,42,43,44,53,54];
+            var accepted=new string[10];
+            for(int k=0;k<10;k++) {
+                accepted[k]=cfgIndices[k]<f.Length?f[cfgIndices[k]]:"0";
+                if(!double.TryParse(accepted[k],NumberStyles.Float,CultureInfo.InvariantCulture,out var value) || !double.IsFinite(value))return;
+            }
+            boardSettings[boardAxis]=accepted;axisRevision[boardAxis]=++settingsRevision;
+            if(!gainsEdited[boardAxis]) {
+                axisSettings[boardAxis]=(string[])accepted.Clone();
+                if(editedAxis==boardAxis && !applying)LoadAxisEditor();
+            }
+            outerPidSupported=f.Length>=55;
+            if(f.Length==56)dualSupported=true;
+            telemetryLog?.WriteLine(f.Length==56?line:f.Length==55?line+",":f.Length==53?line+",,,":f.Length==50?line+",,,,,,":line+",0,"+f[13]+","+f[14]+",,,,,,,,");
             if(latest!=null && (telemetryAxis!=boardAxis || v[0]<latest[0])) { history.Clear();ResetPlotView(); }
             telemetryAxis=boardAxis;
             received=DateTime.UtcNow;epoch=uint.Parse(f[4],CultureInfo.InvariantCulture);calibrated=f[34]=="1";latestMode=int.Parse(f[5],CultureInfo.InvariantCulture);
@@ -179,7 +210,7 @@ public partial class MainWindow : Window
             if(state!="RUNNING" && state!="ARMED") runningHere=armedHere=false;
             latest=v;history.Add(v); if(history.Count>1200)history.RemoveRange(0,history.Count-1200);
             Status.Text=$"Board: {StateText()} · {(calibrated?"IMU sẵn sàng":$"Hiệu chuẩn {f[6]}/500")} · {f[33]}";
-            AcceptedSummary.Text=$"Board {(boardAxis==0?"Roll":"Pitch")}: PID {f[37]} / {f[38]} / {f[39]} · Outer {f[40]} / {(outerPidSupported?f[53]:"0")} / {(outerPidSupported?f[54]:"0")} · Base {f[41]} · Sign {f[42]} · Limit {f[43]}";
+            RefreshAcceptedSummary();
             Readout.Text=FormattableString.Invariant($"Roll {v[17]:F2}° | Pitch {v[19]:F2}° | Active {(boardAxis==0?"Roll":"Pitch")} | Rate {v[2]:F2} / target {v[3]:F2}°/s | P/I/D {v[4]:F2}/{v[5]:F2}/{v[6]:F2}\nOutput {v[8]:F2} | LF/RF/LR/RR {v[9]}/{v[10]}/{v[11]}/{v[12]} | PID limit {v[13]} | Mixer clip {v[14]} | dt {v[15]*1000:F2} ms | missing {f[29]} | dropped {f[31]}\nBoard accepted: Kp/Ki/Kd {f[37]}/{f[38]}/{f[39]}, AngleP {f[40]}, base {f[41]}, sign {f[42]}, limit {f[43]}");
         }
         else {
@@ -192,18 +223,97 @@ public partial class MainWindow : Window
     }
     private double Num(TextBox b) { if (!double.TryParse(b.Text, NumberStyles.Float,CultureInfo.InvariantCulture,out var n)||!double.IsFinite(n)) throw new ArgumentException("Invalid number: " + b.Text);return n; }
     private void Fresh() { if (stream==null || state=="DISCONNECTED" || replay || (DateTime.UtcNow-received).TotalSeconds>1) throw new InvalidOperationException("Need fresh board telemetry"); }
-    private async void ApplyClick(object s,RoutedEventArgs e)=>await Act(async()=>{
-        Fresh();
-        if(AxisChoice.SelectedIndex==1 && !pitchSupported)throw new InvalidOperationException("Nạp firmware mới để dùng Pitch.");
-        if(!outerPidSupported && (Num(AngleKi)!=0 || Num(AngleKd)!=0))throw new InvalidOperationException("Cần nạp firmware mới để chỉnh Ki/Kd vòng Outer.");
-        var boxes=outerPidSupported?new[]{Kp,Ki,Kd,AngleKp,AngleKi,AngleKd,BaseDuty,Sign,Limit}:new[]{Kp,Ki,Kd,AngleKp,BaseDuty,Sign,Limit};
-        var values=boxes.Select(Num).Select(n=>n.ToString("G9",CultureInfo.InvariantCulture)).ToArray();
-        if(pitchSupported)await Request($"AXIS {AxisChoice.SelectedIndex}");
-        Verified.IsChecked=false;
-        await Request((outerPidSupported?"CONFIG_CASCADE ":"CONFIG ")+string.Join(' ',values));
+    private void SaveAxisEditor() {
+        axisSettings[editedAxis]=new[]{Kp,Ki,Kd,AngleKp,BaseDuty,Sign,Limit,Target,AngleKi,AngleKd}.Select(x=>x.Text).ToArray();
+    }
+    private string FormatBoardSettings(int axis) {
+        if(boardSettings[axis] is not {} s)return $"Board {(axis==0?"Roll":"Pitch")}: đang chờ xác nhận…";
+        return $"Board {(axis==0?"Roll":"Pitch")}: Inner {s[0]} / {s[1]} / {s[2]} · Outer {s[3]} / {s[8]} / {s[9]} · Base {s[4]} · Sign {s[5]} · Limit {s[6]}";
+    }
+    private void RefreshAcceptedSummary() {
+        if(AcceptedSummary==null)return;
+        AcceptedSummary.Text=RunAxes.SelectedIndex==2
+            ? FormatBoardSettings(0)+Environment.NewLine+FormatBoardSettings(1)
+            : FormatBoardSettings(RunAxes.SelectedIndex==1?1:0);
+    }
+    private string ConfigCommand(string[] settings) {
+        int[] indices=outerPidSupported?[0,1,2,3,8,9,4,5,6]:[0,1,2,3,4,5,6];
+        double Parse(int k) { if(!double.TryParse(settings[k],NumberStyles.Float,CultureInfo.InvariantCulture,out var n)||!double.IsFinite(n))throw new ArgumentException("Gain không hợp lệ");return n; }
+        if(!outerPidSupported && (Parse(8)!=0 || Parse(9)!=0))throw new InvalidOperationException("Cần firmware mới để dùng Outer Ki/Kd.");
+        return (outerPidSupported?"CONFIG_CASCADE ":"CONFIG ")+string.Join(' ',indices.Select(k=>Parse(k).ToString("G9",CultureInfo.InvariantCulture)));
+    }
+    private async void ApplyClick(object s,RoutedEventArgs e)=>await Act(ApplyPid);
+    private async Task ApplyPid() {
+        Fresh();if(applying)return;SaveAxisEditor();
+        int scope=RunAxes.SelectedIndex;var op=operation;
+        if(scope==2 && !dualSupported)throw new InvalidOperationException("Cần firmware DUAL_AXIS_V1 để chạy cả Roll + Pitch.");
+        if(scope==1 && !pitchSupported)throw new InvalidOperationException("Cần firmware hỗ trợ Pitch.");
+        if(scope==2) {
+            // Both axes share one collective throttle. PID gains remain separate,
+            // but Base must be identical in both board configurations.
+            axisSettings[0][4]=axisSettings[1][4]=BaseDuty.Text;
+            gainsEdited[0]=gainsEdited[1]=true;
+        }
+        int[] axes=scope==2?[0,1]:[scope];
+        applying=true;appliedScope=-1;Verified.IsChecked=false;UpdateUi();
+        try {
+            // Single-axis operation keeps the original fast path: select once,
+            // apply once, and use the command ACK as confirmation. Waiting for a
+            // later telemetry frame made Roll/Pitch Apply unnecessarily slow and
+            // added another AXIS round-trip on Wi-Fi.
+            if(scope!=2) {
+                if(op!=operation)return;
+                if(pitchSupported)await Request($"AXIS {scope}");
+                if(op!=operation)return;
+                await Request(ConfigCommand(axisSettings[scope]));
+                if(op!=operation)return;
+                appliedScope=scope;
+                Event("Đã Apply PID "+(scope==0?"Roll":"Pitch"));
+                return;
+            }
+
+            // Read each board config first; untouched axes keep their tuned gains.
+            foreach(int axis in axes) {
+                long revision=settingsRevision;
+                if(op!=operation)return;
+                if(pitchSupported)await Request($"AXIS {axis}");
+                var deadline=DateTime.UtcNow.AddSeconds(2);
+                while(axisRevision[axis]<=revision) {
+                    if(op!=operation)return;
+                    if(DateTime.UtcNow>=deadline)throw new TimeoutException("Chưa nhận cấu hình board của trục "+axis);
+                    await Task.Delay(20);
+                }
+                if(!gainsEdited[axis] && boardSettings[axis] is {} accepted)axisSettings[axis]=(string[])accepted.Clone();
+            }
+            if(op!=operation)return;
+            if(Math.Abs(double.Parse(axisSettings[0][4],CultureInfo.InvariantCulture)-double.Parse(axisSettings[1][4],CultureInfo.InvariantCulture))>1e-9)
+                throw new InvalidOperationException("Chạy cả hai cần cùng Base duty cho Roll và Pitch. Giữ gain riêng mỗi trục.");
+            var commands=axes.Select(k=>ConfigCommand(axisSettings[k])).ToArray();
+            for(int k=0;k<axes.Length;k++) {
+                if(op!=operation)return;
+                if(pitchSupported)await Request($"AXIS {axes[k]}");
+                if(op!=operation)return;
+                await Request(commands[k]);
+            }
+            if(op!=operation)return;
+            await Request("AXIS 0");
+            if(op!=operation)return;
+            appliedScope=scope;Event("Đã Apply PID riêng của cả Roll và Pitch; giữ nguyên mốc IMU.");
+        } finally { applying=false;UpdateUi(); }
+    }
+    private async void ArmClick(object s,RoutedEventArgs e)=>await Act(async()=>{
+        Fresh();if(!calibrated)throw new InvalidOperationException("Wait for calibration");
+        if(TestTabs.SelectedIndex==0 && (appliedScope!=RunAxes.SelectedIndex || boardAxis!=(RunAxes.SelectedIndex==1?1:0)))throw new InvalidOperationException("Apply cấu hình phạm vi chạy trước khi ARM.");
+        var op=operation;var armEpoch=epoch;await Request($"VERIFY {(Verified.IsChecked==true?1:0)}");if(op!=operation)return;
+        await Request($"PROPS_REMOVED {(PropsRemoved.IsChecked==true?1:0)}");if(op!=operation)return;await Request($"ARM {armEpoch}");if(op==operation)armedHere=true;
     });
-    private async void ArmClick(object s,RoutedEventArgs e)=>await Act(async()=>{ Fresh();if(!calibrated)throw new InvalidOperationException("Wait for calibration");if(TestTabs.SelectedIndex==0 && boardAxis!=AxisChoice.SelectedIndex)throw new InvalidOperationException("Áp dụng cấu hình đúng trục trước khi ARM.");var op=operation;var armEpoch=epoch;await Request($"VERIFY {(Verified.IsChecked==true?1:0)}");if(op!=operation)return;await Request($"PROPS_REMOVED {(PropsRemoved.IsChecked==true?1:0)}");if(op!=operation)return;await Request($"ARM {armEpoch}");if(op==operation)armedHere=true; });
-    private async void StartClick(object s,RoutedEventArgs e)=>await Act(async()=>{ Fresh();if(!armedHere||Verified.IsChecked!=true)throw new InvalidOperationException("Confirm rig/mapping, then ARM");var op=operation;await Request(FormattableString.Invariant($"START {epoch} {Mode.SelectedIndex} {Num(Target):G9} 0"));if(op==operation){runningHere=true;armedHere=false;} });
+    private async void StartClick(object s,RoutedEventArgs e)=>await Act(StartControl);
+    private async Task StartControl() {
+        Fresh();if(!armedHere||Verified.IsChecked!=true)throw new InvalidOperationException("Confirm rig/mapping, then ARM");
+        var op=operation;
+        string command=RunAxes.SelectedIndex==2?FormattableString.Invariant($"START_BOTH {epoch} {Mode.SelectedIndex} {Num(BothRollTarget):G9} {Num(PitchTarget):G9}"):FormattableString.Invariant($"START {epoch} {Mode.SelectedIndex} {Num(Target):G9} 0");
+        await Request(command);if(op==operation){runningHere=true;armedHere=false;}
+    }
     private async void BenchClick(object s,RoutedEventArgs e)=>await Act(async()=>{ Fresh();if(!armedHere||PropsRemoved.IsChecked!=true)throw new InvalidOperationException("Remove props, confirm, then ARM");var op=operation;await Request(FormattableString.Invariant($"BENCH {epoch} {Motor.SelectedIndex} {Num(BenchDuty):G9} 1000"));if(op==operation){runningHere=true;armedHere=false;} });
     private async void InfoClick(object s,RoutedEventArgs e)=>await Act(async()=>await Request("INFO"));
     private async void CalibrateClick(object s,RoutedEventArgs e)=>await Act(async()=>{ await Stop();await Request("CALIBRATE"); });
@@ -217,6 +327,7 @@ public partial class MainWindow : Window
         await Request("INFO");
     });
     private async void StopClick(object s,RoutedEventArgs e)=>await Stop();
+    private void ConfirmationAdded(object s,RoutedEventArgs e) { if(IsLoaded)UpdateUi(); }
     private async void ConfirmationRemoved(object s,RoutedEventArgs e) { if(IsLoaded && stream!=null)await Stop(); }
     private async Task Stop()
     {
@@ -247,7 +358,7 @@ public partial class MainWindow : Window
             if(telemetryLog!=null){telemetryLog.Dispose();eventLog?.Dispose();telemetryLog=eventLog=null;LogButton.Content="Bắt đầu ghi log";return;}
             var folder=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"DroneRebuildLogs",DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));Directory.CreateDirectory(folder);
             telemetryLog=new StreamWriter(System.IO.Path.Combine(folder,"telemetry.csv")){AutoFlush=true};eventLog=new StreamWriter(System.IO.Path.Combine(folder,"events.log")){AutoFlush=true};
-            telemetryLog.WriteLine("type,seq,micros,state,epoch,mode,calCount,ax,ay,az,gx,gy,gz,axisAngle,axisRate,rateTarget,error,p,i,d,raw,output,LF,RF,LR,RR,pidLimited,mixerLimited,dt,missing,late,dropTelemetry,dropReplies,reason,calibrated,verified,propsRemoved,kp,ki,kd,angleKp,base,motorSign,outputLimit,command,axis,roll,rollRate,pitch,pitchRate,imuRoll,imuPitch,imuYaw,angleKi,angleKd");
+            telemetryLog.WriteLine("type,seq,micros,state,epoch,mode,calCount,ax,ay,az,gx,gy,gz,axisAngle,axisRate,rateTarget,error,p,i,d,raw,output,LF,RF,LR,RR,pidLimited,mixerLimited,dt,missing,late,dropTelemetry,dropReplies,reason,calibrated,verified,propsRemoved,kp,ki,kd,angleKp,base,motorSign,outputLimit,command,axis,roll,rollRate,pitch,pitchRate,imuRoll,imuPitch,imuYaw,angleKi,angleKd,runAxes");
             LogButton.Content="■  Dừng ghi log";Event("SESSION,"+folder);Event("SESSION_NOTE,"+SessionNote.Text);if(stream!=null)_=Act(async()=>await Request("INFO"));
         }catch(Exception ex){Status.Text=ex.Message;}
     }
@@ -267,6 +378,7 @@ public partial class MainWindow : Window
     }
     internal void SetPreviewScenario(string scenario)
     {
+        if(scenario=="dual") { RunAxes.SelectedIndex=2;UpdateLayout();RunAxes.BringIntoView(); }
         if(scenario=="logs")ViewTabs.SelectedIndex=2;
         if(scenario=="zoom") { ZoomPlot(.2,.5); }
         if(scenario=="3d") {
@@ -346,7 +458,20 @@ public partial class MainWindow : Window
                 // Deliberately split a telemetry line across TCP packets.
                 var text=string.Join(',',f)+"\n";
                 await writer.WriteAsync(text[..30]);await writer.FlushAsync();await Task.Delay(10,cancel.Token);await writer.WriteAsync(text[30..]);await writer.FlushAsync();
-                while(!cancel.IsCancellationRequested && await reader.ReadLineAsync(cancel.Token)!=null){}
+                int simulatedAxis=0;
+                string[][] fakeConfigs=[["0.4","0.1","0.01","2","0","0","80","1","20"],["0.6","0.2","0.02","3","0","0","80","-1","20"]];
+                while(!cancel.IsCancellationRequested) {
+                    var incoming=await reader.ReadLineAsync(cancel.Token);if(incoming==null)break;
+                    var parts=incoming.Split(' ');if(parts.Length<2)continue;
+                    if(parts[1]=="AXIS")simulatedAxis=int.Parse(parts[2]);
+                    if(parts[1]=="CONFIG_CASCADE")fakeConfigs[simulatedAxis]=parts.Skip(2).ToArray();
+                    await writer.WriteLineAsync($"ACK,{parts[0]},OK,0,{parts[1]}");
+                    var frame=Enumerable.Repeat("0",56).ToArray();Array.Copy(f,frame,f.Length);
+                    frame[2]="40000";frame[45]=simulatedAxis.ToString();
+                    var cfg=fakeConfigs[simulatedAxis];
+                    frame[37]=cfg[0];frame[38]=cfg[1];frame[39]=cfg[2];frame[40]=cfg[3];frame[53]=cfg[4];frame[54]=cfg[5];frame[41]=cfg[6];frame[42]=cfg[7];frame[43]=cfg[8];frame[55]=simulatedAxis.ToString();
+                    await writer.WriteLineAsync(string.Join(',',frame));
+                }
             },cancel.Token);
             Transport.SelectedIndex=1;Address.Text="127.0.0.1";
             Exception? failure=null;var started=DateTime.UtcNow;
@@ -383,13 +508,30 @@ public partial class MainWindow : Window
                 int count=history.Count;extended[48]="NaN";Receive(string.Join(',',extended));
                 if(history.Count!=count)throw new IOException("Nonfinite Pitch was accepted");
                 report.AppendLine("PASS Pitch T50: active-axis mapping, separate angles, history reset, nonfinite rejection");
+                Receive("INFO,TEST,DUAL_AXIS_V1");
+                RunAxes.SelectedIndex=2;
+                axisSettings[0]=["0.4","0.1","0.01","2","80","1","20","0","0","0"];
+                axisSettings[1]=["0.6","0.2","0.02","3","80","-1","20","0","0","0"];
+                gainsEdited[0]=false;gainsEdited[1]=true;LoadAxisEditor();
+                await ApplyPid();
+                if(appliedScope!=2 || boardAxis!=0 || !Events.Text.Contains("CONFIG_CASCADE 0.4 0.1 0.01 2 0 0 80 1 20") || !Events.Text.Contains("CONFIG_CASCADE 0.6 0.2 0.02 3 0 0 80 -1 20"))throw new IOException("Apply both PID configs failed");
+                if(BothTargetPanel.Visibility!=Visibility.Visible || !dualSupported)throw new IOException("Dual run selection failed");
+                armedHere=true;Verified.IsChecked=true;BothRollTarget.Text="1";PitchTarget.Text="-2";
+                await StartControl();
+                if(!Events.Text.Contains("START_BOTH 0 0 1 -2"))throw new IOException("Dual target start framing failed");
+                await Stop();
+                RunAxes.SelectedIndex=1;await ApplyPid();
+                if(appliedScope!=1 || boardAxis!=1)throw new IOException("Independent Pitch Apply failed");
+                RunAxes.SelectedIndex=0;await ApplyPid();
+                if(appliedScope!=0 || boardAxis!=0)throw new IOException("Original Roll Apply regressed");
+                report.AppendLine("PASS dual Apply over TCP, T56, independent Roll/Pitch configs and original Roll/Pitch paths");
             } else {
                 if(failure==null || connecting || stream!=null || pending.Count!=0 || !ConnectButton.IsEnabled)throw new IOException($"{scenario}: connection did not clean up correctly");
                 if((DateTime.UtcNow-started).TotalSeconds>12)throw new IOException("Handshake exceeded bound");
                 report.AppendLine($"PASS {scenario}: bounded failure, resources cleared, retry enabled");
             }
             await Disconnect();cancel.Cancel();listener.Stop();
-            try{await server.WaitAsync(TimeSpan.FromSeconds(2));}catch(OperationCanceledException){}
+            try{await server.WaitAsync(TimeSpan.FromSeconds(2));}catch(OperationCanceledException){}catch(IOException) when(cancel.IsCancellationRequested){}
         }
         connectionPort=3333;return report.ToString();
     }
@@ -407,13 +549,13 @@ public partial class MainWindow : Window
         Transport.IsEnabled=Address.IsEnabled=!connected && !connecting;
         ApplyButton.IsEnabled=fresh && !busy;
         ZeroRollButton.IsEnabled=fresh && calibrated && !busy && !connecting && !stopping;
-        ArmButton.IsEnabled=fresh && calibrated && !busy && (bench?PropsRemoved.IsChecked==true:Verified.IsChecked==true && boardAxis==AxisChoice.SelectedIndex);
+        ArmButton.IsEnabled=fresh && calibrated && !busy && (bench?PropsRemoved.IsChecked==true:Verified.IsChecked==true && appliedScope==RunAxes.SelectedIndex && boardAxis==(RunAxes.SelectedIndex==1?1:0));
         StartButton.IsEnabled=fresh && armedHere && Verified.IsChecked==true && !bench && !stopping;
         BenchButton.IsEnabled=fresh && armedHere && PropsRemoved.IsChecked==true && bench && !stopping;
         StartButton.Visibility=bench?Visibility.Collapsed:Visibility.Visible;BenchButton.Visibility=bench?Visibility.Visible:Visibility.Collapsed;
-        foreach(var control in new Control[]{Kp,Ki,Kd,AngleKp,AngleKi,AngleKd,BaseDuty,Sign,Limit,Mode,Target,Motor,BenchDuty,AxisChoice})control.IsEnabled=!busy;
+        foreach(var control in new Control[]{Kp,Ki,Kd,AngleKp,AngleKi,AngleKd,BaseDuty,Sign,Limit,Mode,Target,Motor,BenchDuty,AxisChoice,RunAxes,PitchTarget,BothRollTarget,RollPidButton,PitchPidButton})control.IsEnabled=!busy;
         AngleKp.IsEnabled=AngleKi.IsEnabled=AngleKd.IsEnabled=!busy && Mode.SelectedIndex==1;
-        RunHint.Text=replay?"Đang xem dữ liệu mô phỏng; chưa thể ARM.":!fresh?"Kết nối và đợi dữ liệu mới từ board.":!calibrated?"Giữ board đứng yên để hoàn tất hiệu chuẩn.":runningHere?"Đang chạy · Esc hoặc DỪNG MOTOR để dừng.":armedHere?(bench?"Đã ARM · bấm Chạy motor trong 15 giây.":"Đã ARM · bấm Bắt đầu Roll trong 15 giây."):bench?"Tháo cánh, đánh dấu xác nhận, rồi ARM.":Verified.IsChecked!=true?"Hoàn tất kiểm tra IMU, chiều lực và đế trước khi xác nhận.":"Áp dụng cấu hình, chờ board xác nhận, rồi ARM.";
+        RunHint.Text=replay?"Đang xem dữ liệu mô phỏng; chưa thể ARM.":!fresh?"Kết nối và đợi dữ liệu mới từ board.":!calibrated?"Giữ board đứng yên để hoàn tất hiệu chuẩn.":runningHere?"Đang chạy · Esc hoặc DỪNG MOTOR để dừng.":armedHere?(bench?"Đã ARM · bấm Chạy motor trong 15 giây.":"Đã ARM · bấm Bắt đầu trong 15 giây."):bench?"Tháo cánh, đánh dấu xác nhận, rồi ARM.":Verified.IsChecked!=true?"Hoàn tất kiểm tra IMU, chiều lực và đế trước khi xác nhận.":"Áp dụng cấu hình, chờ board xác nhận, rồi ARM.";
         if(latest!=null) {
             RollValue.Text=latest[17].ToString("F2",CultureInfo.InvariantCulture)+"°";
             PitchValue.Text=double.IsFinite(latest[19])?latest[19].ToString("F2",CultureInfo.InvariantCulture)+"°":"—";
@@ -427,7 +569,15 @@ public partial class MainWindow : Window
         RatePlotTitle.Text=$"Tốc độ {active} · °/s";
         AngleLegend.Text=(pitchSupported && !replay?"Xanh: Roll · Xanh lá: Pitch":"Xanh: Roll")+(latestMode==1?$" · Cam: mục tiêu {active}":" · RATE không giữ góc");
         ZeroRollButton.Content=$"Khung ngang · Lấy mốc {(AxisChoice.SelectedIndex==0?"Roll":"Pitch")} 0°";
-        StartButton.Content=$"2. Bắt đầu {(AxisChoice.SelectedIndex==0?"Roll":"Pitch")}";
+        StartButton.Content=RunAxes.SelectedIndex==2?"2. Chạy cả hai":"2. Bắt đầu "+(RunAxes.SelectedIndex==1?"Pitch":"Roll");
+        ApplyButton.Content=RunAxes.SelectedIndex==2?"Apply PID cả Roll + Pitch":"Áp dụng PID "+(RunAxes.SelectedIndex==1?"Pitch":"Roll");
+        BaseDutyLabel.Text=RunAxes.SelectedIndex==2?"Duty nền dùng chung Roll + Pitch · Base":"Duty nền · Base";
+        BothPidSelector.Visibility=RunAxes.SelectedIndex==2?Visibility.Visible:Visibility.Collapsed;
+        RollPidButton.Content=(editedAxis==0?"▶ ":"")+"PID Roll";
+        PitchPidButton.Content=(editedAxis==1?"▶ ":"")+"PID Pitch";
+        BothPidSummary.Text=$"Roll: {(gainsEdited[0]?"đã chỉnh":"giữ cấu hình board")} · Pitch: {(gainsEdited[1]?"đã chỉnh":"giữ cấu hình board")} · Đang nhập: {(editedAxis==0?"Roll":"Pitch")}.";
+        BothTargetPanel.Visibility=RunAxes.SelectedIndex==2?Visibility.Visible:Visibility.Collapsed;
+        Target.Visibility=TargetLabel.Visibility=RunAxes.SelectedIndex==2?Visibility.Collapsed:Visibility.Visible;
     }
     private void TransportChanged(object s,SelectionChangedEventArgs e)
     {
@@ -435,6 +585,14 @@ public partial class MainWindow : Window
         if(Transport.SelectedIndex==1) { if(Address.Text.StartsWith("COM",StringComparison.OrdinalIgnoreCase))Address.Text="192.168.4.1";ConnectionHint.Text="Wi-Fi ESP32 · TCP 3333"; }
         else { if(Address.Text.Contains('.'))Address.Text="COM6";ConnectionHint.Text="USB · 460800 baud"; }
     }
+    private void RunAxesChanged(object s,SelectionChangedEventArgs e) {
+        if(!IsLoaded || e.Source!=RunAxes || applying)return;
+        appliedScope=-1;Verified.IsChecked=false;
+        if(RunAxes.SelectedIndex<2 && AxisChoice.SelectedIndex!=RunAxes.SelectedIndex)AxisChoice.SelectedIndex=RunAxes.SelectedIndex;
+        RefreshAcceptedSummary();UpdateUi();
+    }
+    private void SelectRollPidClick(object s,RoutedEventArgs e) { AxisChoice.SelectedIndex=0; }
+    private void SelectPitchPidClick(object s,RoutedEventArgs e) { AxisChoice.SelectedIndex=1; }
     private void ModeChanged(object s,SelectionChangedEventArgs e) { if(TargetLabel==null)return;TargetLabel.Text=Mode.SelectedIndex==1?"Mục tiêu · độ (°)":"Mục tiêu · °/s";UpdateUi(); }
     private void AxisChanged(object s,SelectionChangedEventArgs e) {
         if(!IsLoaded || e.Source!=AxisChoice)return;
@@ -442,7 +600,8 @@ public partial class MainWindow : Window
         var boxes=new[]{Kp,Ki,Kd,AngleKp,BaseDuty,Sign,Limit,Target,AngleKi,AngleKd};
         axisSettings[editedAxis]=boxes.Select(b=>b.Text).ToArray();
         editedAxis=AxisChoice.SelectedIndex;
-        for(int k=0;k<boxes.Length;k++)boxes[k].Text=axisSettings[editedAxis][k];
+        LoadAxisEditor();
+        if(RunAxes.SelectedIndex!=2)RunAxes.SelectedIndex=editedAxis;
         Verified.IsChecked=false;
         Status.Text="Đã chọn "+(editedAxis==0?"Roll":"Pitch")+" · kiểm tra đế và chiều lực, rồi áp dụng cấu hình lên board.";
         UpdateUi();

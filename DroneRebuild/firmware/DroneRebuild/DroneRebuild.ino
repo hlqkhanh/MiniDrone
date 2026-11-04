@@ -47,8 +47,8 @@ void reply(uint32_t id,bool ok,const char* message,uint32_t owner=0) {
   if(xQueueSend(replies,&l,0)!=pdTRUE) { droppedReplies++; emergency("REPLY_OVERFLOW"); }
 }
 void controlTask(void*) {
-  Imu imu; Attitude attitude; RollLevel levels[2]; Controller controller; Config configs[2]; Session session;
-  unsigned axis=0;
+  Imu imu; Attitude attitude; RollLevel levels[2]; Controller controller; DualController dualController; Config configs[2]; Session session;
+  unsigned axis=0; bool both=false;double pitchTarget=0;
   bool available=imu.begin(),calibrated=false,verified=false,props=false;
   int count=0; double sum[3]={},lo[6]={},hi[6]={},bias[3]={};
   uint64_t calibrationStart=esp_timer_get_time(),lastSample=0;
@@ -67,14 +67,14 @@ void controlTask(void*) {
   for(;;) {
     const uint64_t now=esp_timer_get_time();
     Gate g=snapshot();
-    if(g.epoch!=session.epoch) { session.stop(g.reason);session.epoch=g.epoch;controller.reset();output=Output{};bench=false; }
-    if(!session.check(now)) { emergency(session.reason); session.epoch=snapshot().epoch;output=Output{};controller.reset(); }
+    if(g.epoch!=session.epoch) { session.stop(g.reason);session.epoch=g.epoch;controller.reset();dualController.reset();output=Output{};bench=false; }
+    if(!session.check(now)) { emergency(session.reason); session.epoch=snapshot().epoch;output=Output{};controller.reset();dualController.reset(); }
     Command cmd;
     for(int budget=0;budget<4 && xQueueReceive(commands,&cmd,0)==pdTRUE;budget++) {
       Config& cfg=configs[axis];
       bool ok=false; const char* response="INVALID"; unsigned epoch,duration,motor,duty,hz; int which; double value; char extra;
       if(!strcmp(cmd.text,"INFO")) {
-        Line l;l.owner=cmd.owner; snprintf(l.text,sizeof(l.text),"INFO,%s,%s,%s %s,WHO_%02X,source_%s,AP_%s,STA_%s,beta_%.3f,gyroBias_%.6f_%.6f_%.6f,pwm_%d",hw::version,hw::profile,__DATE__,__TIME__,imu.identity(),rebuildSourceId,WiFi.softAPIP().toString().c_str(),WiFi.localIP().toString().c_str(),hw::beta,bias[0],bias[1],bias[2],pwmReady.load());
+        Line l;l.owner=cmd.owner; snprintf(l.text,sizeof(l.text),"INFO,%s,%s,%s %s,WHO_%02X,source_%s,AP_%s,STA_%s,beta_%.3f,gyroBias_%.6f_%.6f_%.6f,pwm_%d,DUAL_AXIS_V1",hw::version,hw::profile,__DATE__,__TIME__,imu.identity(),rebuildSourceId,WiFi.softAPIP().toString().c_str(),WiFi.localIP().toString().c_str(),hw::beta,bias[0],bias[1],bias[2],pwmReady.load());
         if(xQueueSend(replies,&l,0)!=pdTRUE) { droppedReplies++; emergency("REPLY_OVERFLOW"); }
         Line levelInfo;levelInfo.owner=cmd.owner;
         snprintf(levelInfo.text,sizeof(levelInfo.text),"LEVEL,axis_%u,rollRaw_%.6f,rollOffset_%.6f,roll_%.6f,pitchRaw_%.6f,pitchOffset_%.6f,pitch_%.6f,ready_%d",axis,attitude.roll(),levels[0].offset(),angles[0],attitude.pitch(),levels[1].offset(),angles[1],levels[axis].ready());
@@ -84,37 +84,47 @@ void controlTask(void*) {
       else if(!strcmp(cmd.text,"KEEPALIVE")) { ok=cmd.owner==session.owner && session.state==State::Running; if(ok) session.heartbeat(cmd.owner,now);response="KEEPALIVE"; }
       else if(sscanf(cmd.text,"ARM %u %c",&epoch,&extra)==1) {
         ok=pwmReady && session.arm(cmd.owner,epoch,now);
-        if(ok) { controller.reset();portENTER_CRITICAL(&gateMux); if(gate.epoch==epoch) { gate.stopped=false;gate.enabled=false;gate.reason="ARMED"; } else ok=false;portEXIT_CRITICAL(&gateMux); }
+        if(ok) { controller.reset();dualController.reset();portENTER_CRITICAL(&gateMux); if(gate.epoch==epoch) { gate.stopped=false;gate.enabled=false;gate.reason="ARMED"; } else ok=false;portEXIT_CRITICAL(&gateMux); }
         response="ARM";
       } else if(sscanf(cmd.text,"START %u %d %lf %u %c",&epoch,&which,&value,&duration,&extra)==4) {
         ok=calibrated && verified && cfg.valid() && cfg.kp>0 && which>=0 && which<=2 && std::isfinite(value) &&
           std::fabs(value)<=(which==1?10:cfg.rateLimit) && (which!=1 || cfg.angleKp>0) &&
           // Keep the legacy duration argument on the wire; START is continuous.
           session.start(cmd.owner,epoch,now,0);
-        if(ok) { mode=Mode(which);target=value;bench=false;controller.reset();portENTER_CRITICAL(&gateMux);gate.reason="RUNNING";portEXIT_CRITICAL(&gateMux); } response="START";
+        if(ok) { both=false;mode=Mode(which);target=value;bench=false;controller.reset();dualController.reset();portENTER_CRITICAL(&gateMux);gate.reason="RUNNING";portEXIT_CRITICAL(&gateMux); } response="START";
+      } else if(!strncmp(cmd.text,"START_BOTH ",11)) {
+        double rt=0,pt=0;
+        ok=sscanf(cmd.text,"START_BOTH %u %d %lf %lf %c",&epoch,&which,&rt,&pt,&extra)==4 &&
+          calibrated && verified && which>=0 && which<=2 && DualController::compatible(configs[0],configs[1]) &&
+          configs[0].kp>0 && configs[1].kp>0 && (which!=1 || (configs[0].angleKp>0 && configs[1].angleKp>0)) &&
+          std::isfinite(rt) && std::isfinite(pt) && std::fabs(rt)<=(which==1?10:configs[0].rateLimit) &&
+          std::fabs(pt)<=(which==1?10:configs[1].rateLimit) && session.start(cmd.owner,epoch,now,0);
+        if(ok) { axis=0;both=true;mode=Mode(which);target=rt;pitchTarget=pt;bench=false;controller.reset();dualController.reset();
+          portENTER_CRITICAL(&gateMux);gate.reason="RUNNING_BOTH";portEXIT_CRITICAL(&gateMux); }
+        response="START_BOTH";
       } else if(sscanf(cmd.text,"BENCH %u %u %u %u %c",&epoch,&motor,&duty,&duration,&extra)==4) {
         ok=props && motor<4 && duty<=89 && duration>=1 && duration<=2000 && session.start(cmd.owner,epoch,now,duration);
-        if(ok) { bench=true;benchMotor=motor;benchDuty=duty;target=0;output=Output{};portENTER_CRITICAL(&gateMux);gate.reason="BENCH";portEXIT_CRITICAL(&gateMux); } response="BENCH";
+        if(ok) { both=false;bench=true;benchMotor=motor;benchDuty=duty;target=0;output=Output{};portENTER_CRITICAL(&gateMux);gate.reason="BENCH";portEXIT_CRITICAL(&gateMux); } response="BENCH";
       } else if(session.state==State::Disarmed || session.state==State::Fault) {
         if(!strcmp(cmd.text,"CALIBRATE")) {
           for(auto& level:levels)level.reset();available=imu.begin();calibrated=false;count=0;for(auto &v:sum)v=0;calibrationStart=now;lastSample=0;verified=false;ok=available;response="CALIBRATE";
         } else if(!strcmp(cmd.text,"ZERO_ROLL")) {
           ok=calibrated && lastSample && now-lastSample<20000 && g.stopped && !g.enabled && levels[0].zero();
-          if(ok) { angles[0]=levels[0].angle(attitude.roll());verified=false;controller.reset();output=Output{}; }
+          if(ok) { angles[0]=levels[0].angle(attitude.roll());verified=false;controller.reset();dualController.reset();output=Output{}; }
           response=ok?"ZERO_ROLL":"ZERO_REQUIRES_STILL_CALIBRATED_LEVEL_WITHIN_10_DEG";
         } else if(!strcmp(cmd.text,"ZERO_PITCH")) {
           ok=calibrated && lastSample && now-lastSample<20000 && g.stopped && !g.enabled && levels[1].zero();
-          if(ok) { angles[1]=levels[1].angle(attitude.pitch());verified=false;controller.reset();output=Output{}; }
+          if(ok) { angles[1]=levels[1].angle(attitude.pitch());verified=false;controller.reset();dualController.reset();output=Output{}; }
           response=ok?"ZERO_PITCH":"ZERO_REQUIRES_STILL_CALIBRATED_LEVEL_WITHIN_10_DEG";
         } else if(sscanf(cmd.text,"AXIS %d %c",&which,&extra)==1 && which>=0 && which<=1) {
-          axis=which;verified=false;controller.reset();output=Output{};target=0;ok=true;response="AXIS";
+          axis=which;both=false;verified=false;controller.reset();dualController.reset();output=Output{};target=0;ok=true;response="AXIS";
         } else if(sscanf(cmd.text,"VERIFY %d %c",&which,&extra)==1 && (which==0 || which==1)) { verified=which;ok=true;response="VERIFY"; }
         else if(sscanf(cmd.text,"PROPS_REMOVED %d %c",&which,&extra)==1 && (which==0 || which==1)) { props=which;ok=true;response="PROPS_REMOVED"; }
         else if(sscanf(cmd.text,"TELEMETRY %u %c",&hz,&extra)==1 && (hz==50 || hz==100)) { telem=hz;ok=true;response="TELEMETRY"; }
         else {
           Config next=cfg;
-          if(sscanf(cmd.text,"CONFIG_CASCADE %lf %lf %lf %lf %lf %lf %lf %lf %lf %c",&next.kp,&next.ki,&next.kd,&next.angleKp,&next.angleKi,&next.angleKd,&next.base,&next.motorSign,&next.outputLimit,&extra)==9 && next.valid()) { verified=false;cfg=next;controller.reset();output=Output{};ok=true;response="CONFIG_CASCADE"; }
-          else if(sscanf(cmd.text,"CONFIG %lf %lf %lf %lf %lf %lf %lf %c",&next.kp,&next.ki,&next.kd,&next.angleKp,&next.base,&next.motorSign,&next.outputLimit,&extra)==7 && next.valid()) { if(next.motorSign!=cfg.motorSign)verified=false;cfg=next;controller.reset();ok=true;response="CONFIG"; }
+          if(sscanf(cmd.text,"CONFIG_CASCADE %lf %lf %lf %lf %lf %lf %lf %lf %lf %c",&next.kp,&next.ki,&next.kd,&next.angleKp,&next.angleKi,&next.angleKd,&next.base,&next.motorSign,&next.outputLimit,&extra)==9 && next.valid()) { verified=false;cfg=next;controller.reset();dualController.reset();output=Output{};ok=true;response="CONFIG_CASCADE"; }
+          else if(sscanf(cmd.text,"CONFIG %lf %lf %lf %lf %lf %lf %lf %c",&next.kp,&next.ki,&next.kd,&next.angleKp,&next.base,&next.motorSign,&next.outputLimit,&extra)==7 && next.valid()) { if(next.motorSign!=cfg.motorSign)verified=false;cfg=next;controller.reset();dualController.reset();ok=true;response="CONFIG"; }
         }
       } else response="STOP_FIRST";
       if(!ok && session.state==State::Armed && (!strncmp(cmd.text,"START",5)||!strncmp(cmd.text,"BENCH",5))) emergency("START_REJECTED");
@@ -149,7 +159,10 @@ void controlTask(void*) {
       if(session.state==State::Running) {
         if(bench) { session.sampleAt=now;publish(true); }
         else if(calibrated) {
-          output=controller.step(configs[axis],mode,target,angles[axis],rates[axis],dt,Axis(axis));
+          if(both) {
+            auto pair=dualController.step(configs[0],configs[1],mode,target,pitchTarget,angles[0],angles[1],rates[0],rates[1],dt);
+            output=pair.roll;
+          } else output=controller.step(configs[axis],mode,target,angles[axis],rates[axis],dt,Axis(axis));
           if(strcmp(output.fault,"NONE")) emergency(output.fault);
           else { session.sampleAt=now;publish(mode!=Mode::DryRun); }
         } else emergency("NOT_CALIBRATED");
@@ -165,7 +178,7 @@ void controlTask(void*) {
           output.pidLimited,output.mixerLimited,dt,(unsigned long)missed,(unsigned long)late,(unsigned long)droppedTelemetry,(unsigned long)droppedReplies,
           gateNow.reason,calibrated,verified,props,cfg.kp,cfg.ki,cfg.kd,cfg.angleKp,cfg.base,cfg.motorSign,cfg.outputLimit,target);
         const size_t used=strlen(l.text);
-        snprintf(l.text+used,sizeof(l.text)-used,",%u,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",axis,angles[0],rates[0],angles[1],rates[1],attitude.roll(),attitude.pitch(),attitude.yaw(),cfg.angleKi,cfg.angleKd);
+        snprintf(l.text+used,sizeof(l.text)-used,",%u,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%u",axis,angles[0],rates[0],angles[1],rates[1],attitude.roll(),attitude.pitch(),attitude.yaw(),cfg.angleKi,cfg.angleKd,both?2:axis);
         if(xQueueSend(samples,&l,0)!=pdTRUE) droppedTelemetry++;
       }
     }

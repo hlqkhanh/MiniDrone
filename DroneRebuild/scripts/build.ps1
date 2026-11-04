@@ -15,6 +15,9 @@ if (-not $AppOnly) {
     $stamp = "#pragma once`nconstexpr const char* rebuildSourceId=`"$sourceId`";`n"
     [IO.File]::WriteAllText((Join-Path $sketch 'BuildInfo.h'),$stamp)
     $cli = Join-Path $repo '.tools/arduino-cli/arduino-cli.exe'
+    $env:ARDUINO_DIRECTORIES_DATA = Join-Path $repo '.tools/arduino-data'
+    $env:ARDUINO_DIRECTORIES_DOWNLOADS = Join-Path $repo '.tools/arduino-downloads'
+    $env:ARDUINO_DIRECTORIES_USER = Join-Path $repo '.tools/arduino-user'
     $arguments = @('compile','--warnings','all','--config-file',(Join-Path $repo '.tools/arduino-config.yaml'),'--fqbn','espressif:esp32:esp32','--build-path',(Join-Path $build 'esp32'))
     $bundles=Join-Path $repo '.tools/esp32-bundles'
     $arguments += @('--build-property',"runtime.tools.esptool_py.path=$(Join-Path $bundles 'esptool-windows-amd64')",'--build-property',"runtime.tools.esp32-libs.path=$(Join-Path $bundles 'esp32-libs')",'--build-property',"runtime.tools.esp-x32.path=$(Join-Path $bundles 'xtensa-esp-elf')",$sketch)

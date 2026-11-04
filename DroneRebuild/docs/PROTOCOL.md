@@ -62,3 +62,13 @@ Firmware mới gửi T55, giữ nguyên T53 và thêm 53 `angleKi`, 54 `angleKd`
 RATE chỉ chạy Inner PID (°/s → duty). ANGLE chạy Outer PID (° → mục tiêu °/s, giới hạn ±rateLimit) rồi Inner PID. Outer dùng tích phân hình thang, giới hạn I ±rateLimit, chống windup khi target rate/Inner/mixer bão hòa; D trên góc đo, lọc bằng dHz để tránh kick khi đổi setpoint. STOP/ARM/START/đổi trục/cấu hình reset cả hai vòng. Outer Kp 0–5, Ki 0–2, Kd 0–1. Mặc định Ki/Kd Outer = 0 nên giữ hành vi P góc cũ. App firmware cũ chỉ áp dụng được Outer P; muốn Ki/Kd khác 0 cần nạp firmware T55.
 
 Các mô hình MATLAB/Simulink với layout cấu hình 14 giá trị hiện tại vẫn dùng Outer Ki/Kd = 0; chưa mô phỏng các gain Outer mới qua layout đó.
+
+## Chạy riêng Roll / Pitch hoặc cả hai
+
+Firmware quảng bá `DUAL_AXIS_V1` trong INFO. `START_BOTH epoch mode rollTarget pitchTarget` dùng cùng mode RATE/ANGLE/DRYRUN cho hai trục, target riêng. Kiểm tra gain/config hợp lệ của cả hai và cùng Base trước khi chạy. PID và tích phân độc lập; trộn chung: LF=B+r+p, RF=B-r+p, LR=B+r-p, RR=B-r-p. Mỗi sign riêng; clamp 0–220, phản hồi bão hòa mixer về cả hai PID. Chỉ xuất qua gate chung, STOP/heartbeat/stale và dry-run như trước.
+
+Telemetry T56 giữ nguyên T55, thêm trường 55 `runAxes` (0 Roll, 1 Pitch, 2 cả hai). Khi chạy cả hai, telemetry PID/rate/output chính vẫn là Roll; các góc Roll/Pitch và PWM là đo/lệnh chung. Chưa có đồ thị PID chi tiết riêng cho Pitch khi chạy cả hai.
+
+App tách trục chỉnh gain/lấy mốc khỏi phạm vi chạy. Apply cả hai gửi AXIS/CONFIG_CASCADE tuần tự, không tự CALIBRATE/ZERO. Gain trục chưa sửa được đọc lại từ board; gain đã nhập được giữ riêng. Base hai trục phải bằng nhau, không tự thay đổi Base của Roll. Firmware cũ vẫn chạy đơn trục nhưng không hỗ trợ cả hai.
+
+Mốc cân bằng hiện tại vẫn nằm trong RAM như trước: đổi trục/Apply/START không xóa mốc; reset hoặc nạp firmware sẽ xóa mốc. Ghi lại gain đã chỉnh trước khi nạp.

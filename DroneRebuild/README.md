@@ -75,3 +75,7 @@ Trong tab Đồ thị PID: cuộn chuột để zoom thời gian tại vị trí
 ## Chỉnh Inner / Outer cho Roll và Pitch
 
 Chọn trục Roll/Pitch; mỗi trục giữ riêng sáu gain Inner Kp/Ki/Kd và Outer Kp/Ki/Kd. Chọn **Inner · PID tốc độ (RATE)** để chỉnh vòng tốc độ trước, mục tiêu °/s. Chọn **Outer + Inner · PID góc (ANGLE)** để dùng cả hai vòng, mục tiêu độ. Bấm Áp dụng để gửi cấu hình của trục đã chọn; kiểm tra gain board trả về trong phần cấu hình đã nhận. Cần nạp firmware T55 mới cho Ki/Kd Outer; mặc định bằng 0. Đây vẫn là chế độ thử một trục mỗi lượt trên đế, không điều khiển đồng thời hai trục.
+
+## Phạm vi chạy
+
+Giữ trục chỉnh gain/lấy mốc như trước; mục **Phạm vi chạy** chọn Riêng Roll, Riêng Pitch hoặc Cả Roll + Pitch. Chạy cả hai dùng PID riêng từng trục: nhập gain Roll, chuyển sang Pitch nhập gain Pitch, chọn Cả hai rồi **Apply PID cả Roll + Pitch**. Hai Base duty phải bằng nhau. Xác nhận cả hai mapping và đế phù hợp rồi ARM/Start. Mục tiêu Roll/Pitch nhập riêng khi chạy cả hai. Không tự hiệu chuẩn/lấy lại mốc. Cần firmware DUAL_AXIS_V1; nạp firmware sẽ reset mốc RAM như trước.

@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 // Canonical controller: firmware and native simulation compile THIS file.
 namespace rebuild {
@@ -37,6 +38,7 @@ class Controller {
   bool angleInitialized_=false, previousInnerLimited_=false;
 public:
   void reset() { *this=Controller{}; }
+  void mixerFeedback(bool limited) { previousMixerLimited_=limited; }
   Output step(const Config& c, Mode mode, double command, double angle, double rate, double dt, Axis axis=Axis::Roll) {
     Output o;
     auto fail=[&](const char* why) { reset(); Output f; f.fault=why; return f; };
@@ -80,6 +82,37 @@ public:
     }
     // Saturation is reported above; keep controlling with bounded output.
     previous_=rate; previousError_=o.error; initialized_=true; previousMixerLimited_=o.mixerLimited;previousInnerLimited_=o.pidLimited;
+    return o;
+  }
+};
+// Two independent cascaded PIDs sharing a single collective base and mixer.
+struct DualOutput { Output roll, pitch; };
+class DualController {
+  Controller roll_,pitch_;
+public:
+  void reset() { roll_.reset();pitch_.reset(); }
+  static bool compatible(const Config& r,const Config& p) {
+    return r.valid() && p.valid() && std::fabs(r.base-p.base)<1e-9;
+  }
+  DualOutput step(const Config& r,const Config& p,Mode mode,double rt,double pt,
+                  double ra,double pa,double rr,double pr,double dt) {
+    DualOutput o;
+    if(!compatible(r,p)) { reset();o.roll.fault=o.pitch.fault="DUAL_BASE_CONFIG";return o; }
+    o.roll=roll_.step(r,mode,rt,ra,rr,dt,Axis::Roll);
+    o.pitch=pitch_.step(p,mode,pt,pa,pr,dt,Axis::Pitch);
+    if(std::strcmp(o.roll.fault,"NONE") || std::strcmp(o.pitch.fault,"NONE")) {
+      const char* fault=std::strcmp(o.roll.fault,"NONE")?o.roll.fault:o.pitch.fault;
+      reset();o=DualOutput{};o.roll.fault=o.pitch.fault=fault;return o;
+    }
+    const double roll=r.motorSign*o.roll.u,pitch=p.motorSign*o.pitch.u;
+    const double mixed[]={r.base+roll+pitch,r.base-roll+pitch,r.base+roll-pitch,r.base-roll-pitch};
+    bool limited=false;
+    for(int k=0;k<4;k++) {
+      limited |= mixed[k]<0 || mixed[k]>220;
+      o.roll.motor[k]=o.pitch.motor[k]=static_cast<unsigned>(std::floor(bound(mixed[k],0,220)+.5));
+    }
+    o.roll.mixerLimited=o.pitch.mixerLimited=limited;
+    roll_.mixerFeedback(limited);pitch_.mixerFeedback(limited);
     return o;
   }
 };

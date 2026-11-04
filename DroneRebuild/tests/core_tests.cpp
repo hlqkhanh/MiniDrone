@@ -76,6 +76,30 @@ int main() {
   assert(rollConfig.angleKi==.5 && pitchConfig.angleKi==.2);
   cascade.angleKi=-1;assert(!cascade.valid());cascade.angleKi=.5;
   cascade.angleKd=NAN;assert(!cascade.valid());
+  // Combined mixer: independent PID states and shared collective only once.
+  Config rc,pc;rc.kp=pc.kp=1;rc.angleKp=pc.angleKp=2;
+  DualController dual;
+  auto pair=dual.step(rc,pc,Mode::Rate,2,3,0,0,0,0,.005);
+  assert(pair.roll.u==2 && pair.pitch.u==3);
+  unsigned expectedBoth[]={85,81,79,75};
+  for(int k=0;k<4;k++)assert(pair.roll.motor[k]==expectedBoth[k] && pair.pitch.motor[k]==expectedBoth[k]);
+  dual.reset();Controller singleRoll;auto singleOutput=singleRoll.step(rc,Mode::Rate,2,0,0,.005);
+  pair=dual.step(rc,pc,Mode::Rate,2,0,0,0,0,0,.005);
+  for(int k=0;k<4;k++)assert(pair.roll.motor[k]==singleOutput.motor[k]);
+  pc.motorSign=-1;dual.reset();pair=dual.step(rc,pc,Mode::Rate,2,3,0,0,0,0,.005);
+  assert(pair.roll.motor[0]==79 && pair.roll.motor[1]==75 && pair.roll.motor[2]==85 && pair.roll.motor[3]==81);
+  pc.motorSign=1;rc.base=pc.base=180;rc.kp=pc.kp=5;
+  pair=dual.step(rc,pc,Mode::Rate,20,20,0,0,0,0,.005);
+  for(auto m:pair.roll.motor)assert(m<=220);
+  rc.base=pc.base=1;pair=dual.step(rc,pc,Mode::Rate,20,20,0,0,0,0,.005);
+  assert(pair.roll.mixerLimited && pair.pitch.mixerLimited);
+  pc.base=2;pair=dual.step(rc,pc,Mode::Rate,0,0,0,0,0,0,.005);
+  assert(std::strcmp(pair.roll.fault,"NONE"));for(auto m:pair.roll.motor)assert(m==0);
+  rc.base=pc.base=80;pc.kp=0;pair=dual.step(rc,pc,Mode::Angle,0,0,0,0,0,0,.005);
+  assert(!std::strcmp(pair.roll.fault,"GAINS_ZERO"));for(auto m:pair.roll.motor)assert(m==0);
+  pc.kp=1;pair=dual.step(rc,pc,Mode::Rate,0,0,0,0,NAN,0,.005);
+  assert(!std::strcmp(pair.roll.fault,"SENSOR"));
+  std::cout<<"PASS dual-axis mixer, single-axis equivalence, signs, clamp, shared base and faults\n";
   Session s; assert(!s.start(1,0,1000,1000)); assert(s.arm(1,0,1000));
   assert(!s.arm(2,0,1500)); // Armed ownership cannot be stolen.
   assert(!s.start(2,0,2000,1000)); assert(s.start(1,0,2000,1000));

@@ -39,24 +39,31 @@
      <TextBlock Text="2   Chuẩn bị lượt thử" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12"/>
      <TabControl x:Name="TestTabs" BorderThickness="0" Background="White" SelectionChanged="TestTabChanged">
       <TabItem Header="Điều khiển trục"><StackPanel Margin="0,12,0,0">
-       <TextBlock Text="Trục thử · mỗi lượt một trục" Style="{StaticResource Label}"/><ComboBox x:Name="AxisChoice" SelectedIndex="0" SelectionChanged="AxisChanged"><ComboBoxItem Content="Roll · nghiêng trái / phải"/><ComboBoxItem Content="Pitch · chúi / ngẩng đầu"/></ComboBox>
+       <TextBlock Text="Trục đang chỉnh PID / lấy mốc" Style="{StaticResource Label}"/><ComboBox x:Name="AxisChoice" SelectedIndex="0" SelectionChanged="AxisChanged"><ComboBoxItem Content="Roll · nghiêng trái / phải"/><ComboBoxItem Content="Pitch · chúi / ngẩng đầu"/></ComboBox>
+       <TextBlock Text="Phạm vi chạy" Style="{StaticResource Label}" Margin="0,10,0,5"/><ComboBox x:Name="RunAxes" SelectedIndex="0" SelectionChanged="RunAxesChanged"><ComboBoxItem Content="Riêng Roll"/><ComboBoxItem Content="Riêng Pitch"/><ComboBoxItem Content="Cả Roll + Pitch"/></ComboBox>
+       <Border x:Name="BothPidSelector" Visibility="Collapsed" Background="#EEF4FF" CornerRadius="6" Padding="10" Margin="0,10,0,0"><StackPanel>
+        <TextBlock Text="Hai bộ PID độc lập" FontWeight="SemiBold"/>
+        <TextBlock Text="Chọn từng trục để nhập gain riêng. Chuyển trục sẽ lưu bộ đang chỉnh; sau đó Apply cả hai." Foreground="#52657D" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,8"/>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions><Button x:Name="RollPidButton" Content="PID Roll" Click="SelectRollPidClick"/><Button x:Name="PitchPidButton" Grid.Column="2" Content="PID Pitch" Click="SelectPitchPidClick"/></Grid>
+        <TextBlock x:Name="BothPidSummary" Foreground="#52657D" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
+       </StackPanel></Border>
        <TextBlock Text="Chế độ chạy" Style="{StaticResource Label}" Margin="0,10,0,5"/><ComboBox x:Name="Mode" SelectedIndex="0" SelectionChanged="ModeChanged"><ComboBoxItem Content="Inner · tốc độ (RATE)"/><ComboBoxItem Content="Outer + Inner · góc (ANGLE)"/><ComboBoxItem Content="Tính thử · không xuất motor"/></ComboBox>
        <TextBlock Text="Inner PID · tốc độ → duty" FontWeight="SemiBold" Margin="0,14,0,8"/>
        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Kp" Style="{StaticResource Label}"/><TextBox x:Name="Kp" Text="0"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="Ki" Style="{StaticResource Label}"/><TextBox x:Name="Ki" Text="0"/></StackPanel><StackPanel Grid.Column="4"><TextBlock Text="Kd" Style="{StaticResource Label}"/><TextBox x:Name="Kd" Text="0"/></StackPanel></Grid>
        <TextBlock Text="Outer PID · góc → tốc độ" FontWeight="SemiBold" Margin="0,12,0,8"/>
        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Kp" Style="{StaticResource Label}"/><TextBox x:Name="AngleKp" Text="0"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="Ki" Style="{StaticResource Label}"/><TextBox x:Name="AngleKi" Text="0"/></StackPanel><StackPanel Grid.Column="4"><TextBlock Text="Kd" Style="{StaticResource Label}"/><TextBox x:Name="AngleKd" Text="0"/></StackPanel></Grid>
        <TextBlock Text="RATE dùng Inner; ANGLE dùng cả Outer và Inner. Gain riêng cho từng trục Roll/Pitch." Foreground="#66758A" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,8"/>
-       <TextBlock Text="Duty nền · Base" Style="{StaticResource Label}"/><TextBox x:Name="BaseDuty" Text="80"/>
+       <TextBlock x:Name="BaseDutyLabel" Text="Duty nền · Base" Style="{StaticResource Label}"/><TextBox x:Name="BaseDuty" Text="80"/>
        <Expander Header="Chiều motor và giới hạn" Margin="0,12,0,10"><Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Motor sign · ±1" Style="{StaticResource Label}"/><TextBox x:Name="Sign" Text="1"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="Output limit · duty" Style="{StaticResource Label}"/><TextBox x:Name="Limit" Text="20"/></StackPanel></Grid></Expander>
        <Button x:Name="ApplyButton" Content="Áp dụng cấu hình lên board" Click="ApplyClick"/><TextBlock x:Name="AcceptedSummary" Text="Chưa nhận cấu hình từ board." Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,6,0,12"/>
-       <StackPanel><TextBlock x:Name="TargetLabel" Text="Mục tiêu · °/s" Style="{StaticResource Label}"/><TextBox x:Name="Target" Text="0"/><TextBlock Text="Chạy liên tục đến khi STOP hoặc có lỗi. Không tự dừng theo góc hay tốc độ quay." Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel>
-       <CheckBox x:Name="Verified" Unchecked="ConfirmationRemoved"><TextBlock Text="Đã kiểm tra trục IMU, chiều lực motor, đế đúng trục đang chọn và mốc ngang." TextWrapping="Wrap"/></CheckBox>
+       <StackPanel><TextBlock x:Name="TargetLabel" Text="Mục tiêu · °/s" Style="{StaticResource Label}"/><TextBox x:Name="Target" Text="0"/><StackPanel x:Name="BothTargetPanel" Visibility="Collapsed"><TextBlock Text="Mục tiêu Roll · cùng đơn vị" Style="{StaticResource Label}" Margin="0,8,0,5"/><TextBox x:Name="BothRollTarget" Text="0"/><TextBlock Text="Mục tiêu Pitch · cùng đơn vị" Style="{StaticResource Label}" Margin="0,8,0,5"/><TextBox x:Name="PitchTarget" Text="0"/></StackPanel><TextBlock Text="Chạy liên tục đến khi STOP hoặc có lỗi. Không tự dừng theo góc hay tốc độ quay." Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel>
+       <CheckBox x:Name="Verified" Checked="ConfirmationAdded" Unchecked="ConfirmationRemoved"><TextBlock Text="Đã kiểm tra trục IMU, chiều lực motor, đế phù hợp phạm vi chạy và mốc ngang. Chạy cả hai cần kiểm tra cả Roll/Pitch." TextWrapping="Wrap"/></CheckBox>
       </StackPanel></TabItem>
       <TabItem Header="Thử từng motor"><StackPanel Margin="0,12,0,0">
        <Border Background="#FFF4DF" CornerRadius="6" Padding="10"><TextBlock Text="Chỉ thử khi đã tháo cánh. Mỗi lượt chạy 1 giây." TextWrapping="Wrap" Foreground="#815818"/></Border>
        <TextBlock Text="Motor cần thử" Style="{StaticResource Label}" Margin="0,14,0,5"/><ComboBox x:Name="Motor" SelectedIndex="0"><ComboBoxItem Content="LF · Trước trái"/><ComboBoxItem Content="RF · Trước phải"/><ComboBoxItem Content="LR · Sau trái"/><ComboBoxItem Content="RR · Sau phải"/></ComboBox>
        <TextBlock Text="Duty · từ 0 đến 89" Style="{StaticResource Label}" Margin="0,12,0,5"/><TextBox x:Name="BenchDuty" Text="20"/>
-       <CheckBox x:Name="PropsRemoved" Unchecked="ConfirmationRemoved"><TextBlock Text="Đã tháo toàn bộ cánh quạt." TextWrapping="Wrap"/></CheckBox>
+       <CheckBox x:Name="PropsRemoved" Checked="ConfirmationAdded" Unchecked="ConfirmationRemoved"><TextBlock Text="Đã tháo toàn bộ cánh quạt." TextWrapping="Wrap"/></CheckBox>
        <TextBlock Text="ARM trước, rồi bấm Chạy motor ở khung bên dưới. Mỗi lượt cần ARM mới." TextWrapping="Wrap" Foreground="#66758A" Margin="0,10,0,8"/>
       </StackPanel></TabItem>
      </TabControl>
@@ -100,6 +107,6 @@
 
    </Grid>
   </Grid>
-  <TextBlock Grid.Row="2" Text="Mỗi lượt thử một trục trên đế · Gain mô phỏng là tham chiếu · Phím Esc gửi STOP" FontSize="11" Foreground="#66758A" Margin="0,6,0,0"/>
+  <TextBlock Grid.Row="2" Text="Roll / Pitch / cả hai trên đế phù hợp · Gain mô phỏng là tham chiếu · Phím Esc gửi STOP" FontSize="11" Foreground="#66758A" Margin="0,6,0,0"/>
  </Grid>
 </Window>

@@ -64,15 +64,15 @@ o.p = c.kp * o.error;
 
 Công thức:
 
-\[
-e_r = target - rate
-\]
+```text
+e_rate = target - rate
+```
 
 Ví dụ `target = -20°/s`, `rate = -5°/s`:
 
-\[
-e_r=-20-(-5)=-15°/s
-\]
+```text
+e_rate = -20 - (-5) = -15 °/s
+```
 
 Drone chưa đạt tốc độ mục tiêu.
 
@@ -82,9 +82,9 @@ Drone chưa đạt tốc độ mục tiêu.
 o.p = c.kp * o.error;
 ```
 
-\[
-P=K_p e_r
-\]
+```text
+P = Kp × e_rate
+```
 
 Nếu `kp = 0.5`, `error = -15`, thì `P = -7.5` (đơn vị vật lý chính xác của đầu ra cần được xác định theo cách phần cứng sử dụng lệnh; không nên tự gọi nó là duty PWM).
 
@@ -98,17 +98,22 @@ o.d = c.kd * derivative_;
 ```
 
 D dựa trên **tốc độ thay đổi của `rate`**:
-\[
-D_{raw}=-\frac{rate-rate_{previous}}{dt}
-\]
+
+```text
+D_raw = -(rate - rate_previous) / dt
+```
 
 Sau đó code lọc D:
-\[
-D_f \leftarrow D_f+\alpha(D_{raw}-D_f)
-\]
-\[
-D=K_dD_f
-\]
+
+```text
+D_filtered_mới = D_filtered_cũ + alpha × (D_raw - D_filtered_cũ)
+```
+
+```text
+D = Kd × D_filtered
+```
+
+`D_filtered` tương ứng với biến `derivative_` trong code; `alpha` là hệ số lọc. Ký hiệu `×` nghĩa là phép nhân.
 
 `dHz` điều chỉnh tần số cắt của bộ lọc D. Bộ lọc giúp làm mượt tín hiệu D, vì đạo hàm có thể khuếch đại nhiễu cảm biến.
 
@@ -129,9 +134,10 @@ const double candidate = bound(
 ```
 
 Công thức gần đúng:
-\[
-I_{candidate}=bound(I_{old}+K_i e_{avg}dt,-iLimit,+iLimit)
-\]
+
+```text
+I_candidate = bound(I_old + Ki × e_avg × dt, -iLimit, +iLimit)
+```
 
 `ie` là trung bình sai số hiện tại và trước đó (tích phân hình thang). `candidate` chỉ là I dự kiến; code chưa chắc chấp nhận nó.
 
@@ -446,9 +452,9 @@ lastSample = now;
 `esp_timer_get_time()` được dùng như thời gian microsecond. Nhân `1e-6` chuyển microsecond thành giây.
 
 Ví dụ chênh lệch 5000 microsecond:
-\[
-dt=5000\times10^{-6}=0.005s
-\]
+```text
+dt = 5000 × 10^(-6) s = 0.005 s = 5 ms
+```
 
 Tức 5 ms, tương ứng 200 mẫu/giây nếu chu kỳ đều.
 
