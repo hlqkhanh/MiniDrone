@@ -1,0 +1,5 @@
+Báo cáo ngày 27/10/2026
+- Tối ưu giao diện DroneRebuild WPF: tách cấu hình và số đo, bố trí bốn đồ thị PID, ghim ARM/START và nút dừng motor.
+- Sửa kết nối USB/TCP: xử lý gửi dữ liệu không chặn, giới hạn thời gian chờ và hủy kết nối khi lỗi; tránh dữ liệu phiên cũ cập nhật sang phiên mới.
+- Build firmware và ứng dụng; kiểm thử kết nối bằng board giả, gửi từng phần, phản hồi chậm và mất kết nối trên máy.
+- Cập nhật tài liệu hướng dẫn kiểm tra cảm biến, motor và trình tự hiệu chỉnh PID trên gá; chưa nghiệm thu cân bằng trên phần cứng.

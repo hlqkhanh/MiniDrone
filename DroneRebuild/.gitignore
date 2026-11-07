@@ -1,9 +1,0 @@
-build/
-app/bin/
-app/obj/
-simulation/*.slx
-simulation/*.slxc
-simulation/slprj/
-simulation/results/
-logs/
-firmware/DroneRebuild/WifiSecrets.h

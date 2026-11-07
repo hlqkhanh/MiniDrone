@@ -1,3 +1,12 @@
+build/
+app/bin/
+app/obj/
+simulation/*.slx
+simulation/*.slxc
+simulation/slprj/
+simulation/results/
+logs/
+firmware/DroneRebuild/WifiSecrets.h
 bin/
 obj/
 .vs/
@@ -5,13 +14,9 @@ obj/
 *.suo
 .tools/
 .packages/
-firmware/DroneMotionMpu6050/WifiConfig.local.h
-
-# Large files & installers (>100MB)
 *.msi
 *.zip
 *.blend
 *.blend1
 * - Copy.*
 asset/explore-3d-drone/drone_assembly_full.glb
-

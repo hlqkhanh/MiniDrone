@@ -1,0 +1,6 @@
+Báo cáo ngày 28/10/2026
+- Cập nhật DroneRebuild để RATE/ANGLE chạy liên tục đến STOP hoặc lỗi; bỏ thời hạn START, giới hạn góc khởi động và ngắt theo góc/bão hòa, giữ giới hạn đầu ra và watchdog.
+- Build và kiểm thử hồi quy firmware/app; ghi nhận board thực đã chạy firmware cập nhật qua thông tin nhận dạng trong log.
+- Thử nghiệm RATE với các mục tiêu 0, 10 và 20 độ/giây; phân tích log để đánh giá khả năng bám tốc độ, dao động và bão hòa đầu ra.
+- Thử riêng bốn motor bằng BENCH ở duty 50, mỗi lượt 1 giây; kiểm tra sự kiện tự dừng theo thời hạn.
+- Ghi nhận RATE chưa bám mục tiêu ổn định, cần kiểm tra chiều lực motor, rung và gá trước khi chốt PID.

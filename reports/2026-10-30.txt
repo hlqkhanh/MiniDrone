@@ -1,0 +1,5 @@
+Báo cáo ngày 30/10/2026
+- Tiếp tục hiệu chỉnh RATE Roll với Kp=0.15, Ki=0.15; so sánh Kd=0.002 và 0.001 qua sáu phiên log RATE/ANGLE trong ngày.
+- Thử các lượt ngắn, dừng khi góc còn nhỏ để đánh giá khả năng hãm.
+- Thử ANGLE Roll với bộ Rate PID 0.15/0.15/0.001 và Angle PID 0.5/0/0; quan sát khả năng hồi về ngang từ góc đầu dương và âm.
+- Ghi nhận một lượt giữ góc gần ngang, nhưng lượt từ góc âm hồi chậm và I vòng RATE chạm giới hạn 10 duty; chưa nghiệm thu ổn định hai chiều.

@@ -1,0 +1,4 @@
+Báo cáo ngày 29/10/2026
+- Kiểm tra chiều Roll theo cảm biến và mapping motor; đổi Motor sign của Roll từ +1 sang -1 theo phản hồi chuyển động thực tế.
+- Thử nghiệm, hiệu chỉnh PID RATE trên gá và phân tích chín phiên log; giảm Kp, thử thêm Ki/Kd để đánh giá khả năng hãm và độ trôi.
+- Giảm Kp từ 0.2 xuống 0.15, giữ Ki=0.05 và Kd=0.001; ghi nhận dao động giảm nhưng khung vẫn trôi một chiều, chưa chốt bộ PID ổn định.

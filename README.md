@@ -1,159 +1,102 @@
-# MPU6050 3D Motion Viewer
+# Drone — dự án duy nhất, dùng toàn bộ DroneRebuild
 
-**Đồ thị PID trực tiếp:** xem [tab Live PID plots và telemetry C2](doc/vi/do-thi-pid.md). Hiển thị góc, tốc độ, P/I/D và PWM; hỗ trợ Pause/Clear và giữ lịch sử 30 giây.
+Đã đưa DroneRebuild lên thẳng thư mục `Drone/`. Firmware và logic ứng dụng giữ nguyên; chỉ cập nhật đường dẫn model 3D và thư mục công cụ build. Bản DroneMotion cũ đã được chuyển ra ngoài repo để lưu trữ.
 
-**Luồng điều khiển hai tầng mới:** xem [PID góc → PID tốc độ → PWM và cách chỉnh trên WPF](doc/vi/luong-dieu-khien-cascade.md). Firmware báo `CONTROL_CASCADE_V2`; vòng góc chỉnh được độc lập, mặc định 2/0/0, giữ SPI, mapping motor và watchdog của hệ thống Drone.
+Các đường dẫn đang dùng:
 
-**Cân bằng PID trên đế giữ drone (ESP32):** xem [hướng dẫn PID và chỉnh gain trên WPF](doc/vi/pid-can-bang-tren-de.md). Có chỉnh Kp/Ki/Kd riêng roll/pitch, Arm/Start/Stop, telemetry và CSV. Gain mặc định bằng 0; cần xác minh mapping và chỉnh trên đế trước khi dùng.
+- Arduino IDE: [`firmware/DroneRebuild/DroneRebuild.ino`](firmware/DroneRebuild/DroneRebuild.ino).
+- Ứng dụng: [`app/DroneRebuild.App.csproj`](app/DroneRebuild.App.csproj).
+- Toàn bộ tài liệu: [mục lục `docs/`](docs/README.md), đã phân loại theo chủ đề; không còn thư mục `doc/` riêng.
+- Log và báo cáo: `logs/`, `reports/`.
 
-**Wi-Fi có hai cách:** nối thẳng laptop vào `DroneMotion_Setup-XXXX` (mật khẩu `drone12345`), trong WPF chọn **Direct ESP32 Wi-Fi** và `192.168.4.1:3333`; hoặc chọn **Router / hotspot** và IP LAN của ESP32. Cách trực tiếp không cần router, điện thoại hoặc Internet. Xem [cách nạp và kết nối Wi-Fi](firmware/WIFI.md).
+Chạy các lệnh dưới đây từ thư mục **Drone**:
 
-**Dùng ESP32 XW_Z1_V2.0:** xem [hướng dẫn nạp và kết nối ESP32](firmware/ESP32.md). Sketch dùng SPI (SCK18/MOSI23/MISO19/CS5), nhận dạng MPU6500 hoặc MPU9250 qua WHO_AM_I. Các bước Nano/I2C bên dưới dành cho Arduino Nano.
+```powershell
+dotnet run --project .\app\DroneRebuild.App.csproj
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -AppOnly
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -FirmwareOnly
+```
 
-Ứng dụng hiển thị hướng cảm biến trong không gian 3D. Arduino Nano + MPU6050 (I2C) tính quaternion ở 100 Hz; ESP32 + MPU6500/MPU9250 (SPI) lấy mẫu và điều khiển ở 200 Hz, gửi quaternion 100 Hz qua USB/Wi-Fi. Ứng dụng WPF chỉ giữ mẫu mới nhất và cập nhật viewport theo nhịp render.
+Tên sketch, executable, namespace và Wi-Fi vẫn là DroneRebuild để giữ nguyên hành vi chương trình. Chi tiết việc chuyển thư mục: [ghi nhận chuyển dự án](docs/history/CHUYEN_THU_MUC.md).
 
-> Firmware chỉ dùng gia tốc/gyro, chưa dùng từ kế kể cả khi phát hiện MPU9250. Roll/pitch được hiệu chỉnh theo trọng lực, còn yaw là tương đối và sẽ trôi dần. Nút **Zero orientation** đặt tư thế hiện tại làm mốc mới nhưng không loại bỏ yaw drift.
+## Ghi chú của DroneRebuild
 
-## 1. Đấu dây
+**Cập nhật 28/10/2026:** RATE/ANGLE/DryRun chạy liên tục đến STOP hoặc fault. Bỏ duration, điều kiện START ±5°, ENVELOPE/OTHER_AXIS_ENVELOPE và cắt motor do SATURATION_TRACKING. Output vẫn giới hạn theo cấu hình và báo pidLimited/mixerLimited; chống windup, heartbeat, stale-control và lỗi cảm biến vẫn hoạt động. BENCH vẫn chạy 1 giây trên app (firmware tối đa 2 giây). Cần nạp firmware mới; dùng app trong `build/app-continuous`. Xem [giao thức](docs/drone-rebuild/PROTOCOL.md) cho hành vi hiện tại; các hướng dẫn thử cũ có nhắc duration/envelope/góc START không còn áp dụng.
 
-| GY-521 | Arduino Nano V3 |
+Không tham chiếu source/build của app hoặc firmware cũ. Các ghi chú bên dưới được giữ từ DroneRebuild, có phần mô tả các phiên bản trước. Xem [giao thức](docs/drone-rebuild/PROTOCOL.md) và [Roll/Pitch](docs/drone-rebuild/ROLL_PITCH.md) để đối chiếu hành vi hiện tại.
+
+**Buổi thử ngày mai:** [Hướng dẫn chi tiết kiểm tra và hiệu chỉnh Roll trên phần cứng](docs/practice/HUONG_DAN_CAN_BANG_ROLL_THUC_TE.md).
+
+**Giao diện cập nhật 27/10:** cấu hình ở cột trái, tab Điều khiển Roll/Thử từng motor, ARM và bắt đầu ghim dưới, STOP ở góc trên. Bốn biểu đồ góc/rate/output/motor được tách riêng; mở “Chi tiết board và nhật ký” để xem dữ liệu và sự kiện. Các trường cấu hình dài nằm trong vùng cuộn; motor sign/output limit nằm trong “Chiều motor và giới hạn”. Cập nhật này chỉ cần mở lại app đã build, không yêu cầu nạp lại firmware.
+
+## Bắt đầu hôm nay
+
+1. Mở [hướng dẫn Simulink](docs/simulation/SIMULINK.md). Gói `DroneRebuild_Simulink.zip` chứa script tự tạo mô hình, chưa phải `.slx` đã chạy được xác nhận ở máy này.
+2. Chạy test trên máy: `powershell -ExecutionPolicy Bypass -File scripts/test.ps1` từ thư mục Drone. Cần có `g++`.
+3. Build: `powershell -ExecutionPolicy Bypass -File scripts/build.ps1`. Firmware cần bộ công cụ Arduino trong `.tools`; ứng dụng cần .NET SDK.
+4. Chạy app: `app/bin/Release/net8.0-windows/DroneRebuild.App.exe`. Cần .NET 8 Windows Desktop Runtime.
+5. App mặc định mọi gain bằng 0. `Open simulation CSV` chỉ phát lại `build/native_roll.csv`, có nhãn SIMULATION và chỉ dùng khi disconnected.
+
+## Cấu trúc
+
+| Đường dẫn | Vai trò |
 |---|---|
-| VCC | 5V |
-| GND | GND |
-| SDA | A4 |
-| SCL | A5 |
+| `firmware/DroneRebuild/RollCore.h` | Controller C++ chuẩn, không phụ thuộc Arduino |
+| `firmware/DroneRebuild/DroneRebuild.ino` | ESP32 SPI, calibration, Madgwick, task điều khiển, USB/TCP, motor arbiter |
+| `app/` | WPF tối thiểu, USB/TCP, ACK, biểu đồ, log |
+| `simulation/native_sim.cpp` | Mô phỏng chạy chính RollCore.h trên máy |
+| `simulation/roll_sfun.cpp` | C++ S-function gọi chính RollCore.h trong Simulink khi MEX khả dụng |
+| `simulation/roll_step.m` | Bản chuyển MATLAB dự phòng; phải qua đối chiếu vector C++ |
+| `simulation/build_roll_model.m` | Sinh mô hình Simulink 200 Hz |
+| [Giao thức](docs/drone-rebuild/PROTOCOL.md) | Giao thức mới, không dùng app cũ để điều khiển firmware này |
+| [Kiểm tra board/đế](docs/practice/TOMORROW.md) | Trình tự kiểm tra board/đế |
+| [Trạng thái kiểm chứng](docs/history/STATUS.md) | Kết quả máy tính và điều kiện chưa nghiệm thu |
 
-Sơ đồ trên dành cho breakout GY-521 tiêu chuẩn có regulator. Hãy kiểm tra đúng pinout và regulator trên module trước khi cấp nguồn; chip MPU6050 rời chỉ dùng 3.3 V. Chân `INT` không được sử dụng.
+## Kiến trúc
 
-## 2. Nạp firmware
+Vòng góc P tạo rate target; vòng rate PID dùng gyro và tạo phần sửa duty. D theo số đo qua lọc thấp; I tích phân hình thang với giới hạn và conditional anti-windup. Mixer Roll: LF/LR = base + sign×output, RF/RR = base − sign×output. Sign phải xác nhận trên phần cứng.
 
-1. Mở `firmware/DroneMotionMpu6050/DroneMotionMpu6050.ino` bằng Arduino IDE.
-2. Chọn **Arduino Nano**, processor phù hợp với board; clone cũ thường cần **ATmega328P (Old Bootloader)**.
-3. Chọn đúng cổng COM và Upload. Sketch chỉ dùng thư viện `Wire` có sẵn.
-4. Sau khi reset, giữ cảm biến hoàn toàn đứng yên cho tới khi LED ngừng nháy và sáng ổn định (khoảng 2.5–3 giây).
+`RATE_ROLL` nhận rate target trực tiếp. `ANGLE_ROLL` nhận góc mục tiêu. `MIXER_DRY_RUN` tính tương tự RATE nhưng output phần cứng luôn bằng 0. Chỉ chạy Roll; không PID Pitch/Yaw/X/Y/độ cao.
 
-LED nháy chậm khi hiệu chuẩn, sáng khi sẵn sàng, và nháy nhanh nếu không tìm thấy/không đọc được MPU6050.
+Task control đọc SPI/estimator 200 Hz theo thời gian đo thực. Nó chỉ gửi đề xuất output. Timer arbiter là nơi duy nhất ghi PWM sau setup, chạy mỗi 5 ms, độc lập với control/network, kiểm tra heartbeat, tuổi output và thời hạn. Phần trao đổi proposal dùng critical section ngắn, không giữ khóa khi tính PID hoặc gọi mạng. Các mốc 100 ms/2 giây là ngưỡng phần mềm, chưa được đo jitter thực trên board.
 
-## 3. Chạy ứng dụng
+STOP tăng epoch ngay ở transport, xóa quyền xuất motor và làm lệnh ARM/START mang epoch cũ bị từ chối. ARM không được chiếm phiên đã Armed/Running. ACK chỉ trả về kết nối đã gửi lệnh; telemetry chia sẻ giữa hai đường.
 
-Yêu cầu Windows và .NET 8 SDK/Desktop Runtime.
+## Phần cứng dự kiến
 
-```powershell
-dotnet restore .\DroneMotion.sln
-dotnet run --project .\src\DroneMotion.Wpf\DroneMotion.Wpf.csproj
-```
+- ESP32 Dev Module, SPI MPU6500 `0x70` hoặc MPU9250 `0x71`.
+- SCK18/MOSI23/MISO19/CS5; LF14/RF15/LR12/RR13.
+- DLPF CONFIG=3, ACCEL_CONFIG2=3; gyro ±500°/s, accel ±2g, divider=4. Kiểm tra data-ready; không coi đọc lại cùng mẫu là mẫu mới.
+- Gyro bias 500 mẫu ổn định. Motor tắt khi calibrate. Không tự ZERO góc. Roll body tạm dùng −sensor Euler Y; gyro Roll = −gyroY. Đây là quy ước cần xác nhận ngày mai.
+- Gain bằng 0 sau reset; cấu hình runtime không lưu flash.
 
-Trong ứng dụng:
+## USB / Wi-Fi
 
-1. Chọn cổng COM của Nano, giữ baud rate `115200`, rồi chọn **Connect**.
-2. Chờ trạng thái **Sensor ready**. Mở cổng COM có thể làm Nano reset nên bước hiệu chuẩn sẽ chạy lại.
-3. Đặt cảm biến ở tư thế muốn làm mốc và chọn **Zero orientation**.
-4. Chọn **Calibrate** bất cứ lúc nào để đo lại gyro bias; giữ cảm biến đứng yên trong quá trình này.
+USB 460800 baud. AP `DroneRebuild`, mật khẩu `rebuild123`, TCP `192.168.4.1:3333`. Chọn TCP và nhập IP này trong app. Nếu dùng router, chép `WifiSecrets.example.h` thành `WifiSecrets.h`, điền SSID/password, build lại trước phiên thử. Firmware bắt đầu kết nối trong setup; không có portal, scan hay ghi Wi-Fi lúc Armed/Running. Router provision runtime chưa triển khai.
 
-Không mở Serial Monitor cùng lúc với ứng dụng vì mỗi cổng COM chỉ có thể do một chương trình sở hữu.
+TCP timeout và app mất kết nối không tự khởi động lại motor. Kết nối không có quyền vẫn gửi STOP được. Không dùng hai app để đồng thời thử một bộ motor.
 
-## Giao thức serial
+## Nguồn thiết kế
 
-Thiết lập: `115200`, 8 data bits, no parity, 1 stop bit. Mỗi bản tin kết thúc bằng newline.
+- [Crazyflie controllers](https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/sensor-to-control/controllers/): phân tầng attitude/rate.
+- [ArduPilot attitude control](https://ardupilot.org/dev/docs/apmcopter-programming-attitude-control-2.html): luồng góc → tốc độ → motor.
+- [MathWorks C/C++ S-functions](https://www.mathworks.com/help/simulink/sfg/available-s-function-implementations.html): đưa controller C++ vào mô hình.
+- [Espressif LEDC](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/ledc.html): PWM API core 3.x.
 
-```text
-HELLO,1,100
-STATUS,CALIBRATING
-STATUS,READY
-Q,<sequence>,<micros>,<qw>,<qx>,<qy>,<qz>
-ERROR,<code>
-PONG
-```
+Không sao chép gain từ các hệ thống này. Tham số plant và gain trong mô phỏng là minh họa, không phải bản nhận dạng drone 8520.
 
-Ứng dụng có thể gửi `CAL\n` và `PING\n`. Serial Monitor có thể gửi thêm `INFO\n` để đọc lại bus và WHO_AM_I. Hiệu chuẩn hết thời gian chờ sau 15 giây nếu không thu đủ mẫu đứng yên; gửi CAL để thử lại.
+## Tab 3D IMU
 
-## Kiểm thử
+Tab **3D IMU** dùng lại model drone của ứng dụng cũ, có xoay camera và zoom. **Hiệu chỉnh yaw** đặt yaw hiện tại về 0° ở phần hiển thị; roll/pitch luôn theo góc IMU trước bù mốc cân bằng PID. Cần build/nạp firmware mới có telemetry T53 để đủ ba góc. App vẫn đọc T45/T50 cho đồ thị nhưng sẽ báo chờ dữ liệu ở tab 3D. Yaw là hướng tương đối từ gyro và có thể trôi.
 
-### Thử động cơ từ ứng dụng WPF (ESP32)
+### Thu phóng đồ thị
 
-Nạp lại sketch chính `firmware/DroneMotionMpu6050/DroneMotionMpu6050.ino`
-với Arduino-ESP32 core 3.x, giữ toàn bộ file header cùng thư mục, gồm
-`MotorControl.h` và `MotionCompensation.h`. Build/chạy lại app WPF.
+Trong tab Đồ thị PID: cuộn chuột để zoom thời gian tại vị trí con trỏ (đồng bộ cả bốn đồ thị), Ctrl + cuộn để zoom trục giá trị của đồ thị đang trỏ, kéo chuột trái để di chuyển. Có nút −/+; bấm đúp hoặc **Theo dõi mới nhất** để đặt lại thang tự động và cửa sổ 12 giây mới nhất. Khi xem lại, dữ liệu vẫn được nhận/ghi log; chỉ phạm vi hiển thị dừng chạy theo. Chỉ xem lại được dữ liệu còn trong bộ đệm 1200 mẫu.
 
-Trong phần **MANUAL MOTOR OUTPUT**, tháo toàn bộ cánh quạt, xác nhận **All
-propellers are removed**, chọn LF/RF/LR/RR hoặc ALL và đặt Common PWM 0–100%.
-Chọn CUSTOM hoặc sửa một trong bốn giá trị để đặt PWM riêng cho từng động cơ.
-**Copy common PWM to all four** sao chép mức chung sang bốn giá trị CUSTOM.
-LF/RF là trái/phải trước, LR/RR là trái/phải sau theo GPIO14/15/12/13.
-PWM dùng 8 bit (duty 0–255) ở 20 kHz, không phải tốc độ quay hay lực nâng đo
-được. Slider bước 0.1%, textbox cho nhập số trực tiếp; preview hiển thị duty
-thực sau lượng tử hóa. Động cơ cần nguồn VBAT phù hợp theo sơ đồ.
+## Chỉnh Inner / Outer cho Roll và Pitch
 
-Duration nhận 1–4294967295 ms (60000 = 1 phút), hoặc chọn **Continuous until
-STOP** để không đặt thời hạn. Không còn giới hạn thử 35%/2 giây trong firmware
-chính. Đây là thời gian chạy động cơ thủ công, không phải chế độ bay cân bằng.
-**Run / apply** gửi cấu hình và bắt đầu lại thời gian chạy; sửa ô nhập không
-tự tác động PWM. **STOP ALL** hoặc **Esc** dừng tất cả. Bỏ xác nhận tháo cánh lúc chạy cũng
-yêu cầu dừng.
+Chọn trục Roll/Pitch; mỗi trục giữ riêng sáu gain Inner Kp/Ki/Kd và Outer Kp/Ki/Kd. Chọn **Inner · PID tốc độ (RATE)** để chỉnh vòng tốc độ trước, mục tiêu °/s. Chọn **Outer + Inner · PID góc (ANGLE)** để dùng cả hai vòng, mục tiêu độ. Bấm Áp dụng để gửi cấu hình của trục đã chọn; kiểm tra gain board trả về trong phần cấu hình đã nhận. Cần nạp firmware T55 mới cho Ki/Kd Outer; mặc định bằng 0. Đây vẫn là chế độ thử một trục mỗi lượt trên đế, không điều khiển đồng thời hai trục.
 
-App tự ARM cho mỗi lần chạy, gửi KEEPALIVE mỗi 500 ms sau xác nhận RUNNING.
-Supervisor timer trên ESP32 kiểm tra mỗi 50 ms: hết thời gian hoặc thiếu
-KEEPALIVE từ đúng kết nối trong 2 giây thì dừng, kể cả khi loop cảm biến đang
-bận. Disconnect/đóng app gửi STOP; Calibrate dừng động cơ trước khi đo bias.
-Reset không tự chạy động cơ. Firmware chính V2 báo `STATUS,MOTOR_ADVANCED_V2`;
-Arduino Nano và firmware cũ không bật được Run / apply, cần nạp lại sketch
-chính rồi reconnect.
+## Phạm vi chạy
 
-Có thể gửi thủ công qua Serial Monitor (115200, Newline):
-
-```text
-MOTOR ARM
-MOTOR SET 51 76 0 128 60000
-MOTOR KEEPALIVE
-MOTOR STOP
-```
-
-SET nhận duty LF/RF/LR/RR (0–255), sau đó là thời gian ms (0 = liên tục).
-Gửi KEEPALIVE lặp lại trong vòng 2 giây để duy trì chạy, không chỉ gửi một lần.
-Vẫn hỗ trợ `MOTOR LF 20 1000` hoặc RF/LR/RR/ALL với phần trăm nguyên 0–100.
-ARM hết hạn sau 15 giây, chỉ cho một lần chạy và phải đến từ cùng kết nối
-USB/Wi-Fi với lệnh chạy. Kiểm thử máy tính dùng PWM/timer giả lập; chưa thay
-thế kiểm tra timing, nguồn và động cơ thật.
-
-### Mô hình không cập nhật roll/pitch/yaw
-
-Xem Data và trạng thái stream trong app. Data = 0: kiểm tra đã nạp sketch
-chính (MotorTest độc lập không có Q), đợi hiệu chuẩn, hoặc xem lỗi cảm biến.
-Firmware mới bỏ qua lỗi đọc tạm thời và sau 3 lỗi liên tiếp sẽ dừng động cơ,
-thử khởi tạo/hiệu chuẩn lại cảm biến sau 1 giây. Giữ bo đứng yên khi thấy
-SENSOR_RECOVERING_KEEP_STILL. Có Q nhưng mất mô hình: xem lỗi tải GLB ở viewport.
-Nếu bo reset khi chạy động cơ, kiểm tra nguồn/dây; tự retry không khắc phục
-nguồn sụt hoặc kết nối cảm biến hỏng. Chưa xác minh nguyên nhân trên bo thật.
-
-```powershell
-g++ -std=c++17 -I tests/firmware/motor-stubs tests/firmware/motor-control.test.cpp -o "$env:TEMP/minidrone-motor-test.exe"
-& "$env:TEMP/minidrone-motor-test.exe"
-```
-
-### Giảm trôi yaw
-
-Firmware bù gyro bias từ từ sau ít nhất 3 giây có tốc độ góc dư dưới
-0.15 độ/giây, gia tốc gần 1 g và ít thay đổi giữa các mẫu. Khi phát hiện
-chuyển động hoặc gián đoạn lấy mẫu, thời gian chờ được tính lại. Hiệu chỉnh
-Madgwick từ accelerometer giảm dần khi độ lớn gia tốc lệch 1 g từ 0.05 g
-đến 0.20 g, nhằm giảm ảnh hưởng khi dịch chuyển.
-
-Đây là giảm drift, không phải khóa hướng tuyệt đối: quay rất chậm dưới
-ngưỡng nhận diện vẫn có thể bị coi là bias; gia tốc ngang cũng không luôn
-được phát hiện chỉ bằng độ lớn. Không tự đặt yaw về 0 khi đứng yên.
-Sau khi nạp lại firmware, giữ bo đứng yên để Calibrate, bấm Zero orientation,
-đo yaw khi đứng yên 60 giây và khi đưa bo về cùng mốc hướng 10 lần.
-Cần kiểm tra trên bo thật để đánh giá mức cải thiện.
-
-Kiểm thử bù bias bằng dữ liệu giả (C++11):
-
-```powershell
-g++ -std=c++11 tests/firmware/motion-compensation.test.cpp -o "$env:TEMP/motion-compensation-test.exe"
-& "$env:TEMP/motion-compensation-test.exe"
-```
-
-```powershell
-dotnet test .\DroneMotion.sln
-```
-
-Các test tự động bao phủ parser serial, dữ liệu phân mảnh/sai, chuẩn hóa quaternion, chuyển hệ trục và zero orientation. Kiểm thử firmware và chiều quay thực tế cần Arduino cùng cảm biến thật.
+Giữ trục chỉnh gain/lấy mốc như trước; mục **Phạm vi chạy** chọn Riêng Roll, Riêng Pitch hoặc Cả Roll + Pitch. Chạy cả hai dùng PID riêng từng trục: nhập gain Roll, chuyển sang Pitch nhập gain Pitch, chọn Cả hai rồi **Apply PID cả Roll + Pitch**. Hai Base duty phải bằng nhau. Xác nhận cả hai mapping và đế phù hợp rồi ARM/Start. Mục tiêu Roll/Pitch nhập riêng khi chạy cả hai. Không tự hiệu chuẩn/lấy lại mốc. Cần firmware DUAL_AXIS_V1; nạp firmware sẽ reset mốc RAM như trước.

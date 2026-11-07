@@ -1,0 +1,80 @@
+﻿[
+    {
+        "file":  "mc_control_arch.jpg",
+        "alt":  "MC Controller Diagram",
+        "source":  "https://docs.px4.io/main/assets/mc_control_arch.DPb5OeqV.jpg",
+        "bytes":  43535
+    },
+    {
+        "file":  "mc_angular_rate_diagram.jpg",
+        "alt":  "MC Rate Control Diagram",
+        "source":  "https://docs.px4.io/main/assets/mc_angular_rate_diagram.TSu1wihD.jpg",
+        "bytes":  17076
+    },
+    {
+        "file":  "px4_imu_pipeline.png",
+        "alt":  "IMU pipeline",
+        "source":  "https://docs.px4.io/main/assets/px4_imu_pipeline.BMLDCcot.png",
+        "bytes":  13291
+    },
+    {
+        "file":  "mc_angle_diagram.jpg",
+        "alt":  "MC Angle Control Diagram",
+        "source":  "https://docs.px4.io/main/assets/mc_angle_diagram.DjN3Q2_a.jpg",
+        "bytes":  113097
+    },
+    {
+        "file":  "mc_velocity_diagram.png",
+        "alt":  "MC Velocity Control Diagram",
+        "source":  "https://docs.px4.io/main/assets/mc_velocity_diagram.D60AUT18.png",
+        "bytes":  4985
+    },
+    {
+        "file":  "mc_position_diagram.png",
+        "alt":  "MC Position Control Diagram",
+        "source":  "embedded in source HTML",
+        "bytes":  3335
+    },
+    {
+        "file":  "px4_mc_position_controller_diagram.png",
+        "alt":  "MC Position Controller Diagram",
+        "source":  "https://docs.px4.io/main/assets/px4_mc_position_controller_diagram.CNg_GPl2.png",
+        "bytes":  9706
+    },
+    {
+        "file":  "tecs_in_context.svg",
+        "alt":  "TECS",
+        "source":  "https://docs.px4.io/main/assets/tecs_in_context.B_js1RgF.svg",
+        "bytes":  10587
+    },
+    {
+        "file":  "TECS_throttle.png",
+        "alt":  "Energy loop",
+        "source":  "https://docs.px4.io/main/assets/TECS_throttle.B9Padwfm.png",
+        "bytes":  63162
+    },
+    {
+        "file":  "TECS_pitch.png",
+        "alt":  "Energy balance loop",
+        "source":  "https://docs.px4.io/main/assets/TECS_pitch.Bn0YBEm6.png",
+        "bytes":  56496
+    },
+    {
+        "file":  "tecs_speed_altitude_weighting.svg",
+        "alt":  "Pitch and throttle roles along the measured airspeed: below trim, pitch trades height for speed aiming for trim; between trim and the airspeed setpoint, pitch holds height only and the throttle accelerates; above the setpoint, pitch trades speed for height and the throttle is reduced",
+        "source":  "embedded in source HTML",
+        "bytes":  3554
+    },
+    {
+        "file":  "px4_fw_attitude_controller_diagram.png",
+        "alt":  "FW Attitude Controller Diagram",
+        "source":  "https://docs.px4.io/main/assets/px4_fw_attitude_controller_diagram.DZ0gxb-W.png",
+        "bytes":  112550
+    },
+    {
+        "file":  "VTOL_controller_diagram.png",
+        "alt":  "VTOL Attitude Controller Diagram",
+        "source":  "https://docs.px4.io/main/assets/VTOL_controller_diagram.Wg1qpHqf.png",
+        "bytes":  55691
+    }
+]
