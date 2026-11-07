@@ -18,8 +18,8 @@ struct Config {
     const double all[]={kp,ki,kd,angleKp,outputLimit,iLimit,rateLimit,dHz,base,motorSign,maxAngle,maxRate,saturationSeconds,saturationError,angleKi,angleKd};
     for(double x:all) if(!std::isfinite(x)) return false;
     return kp>=0 && kp<=5 && ki>=0 && ki<=2 && kd>=0 && kd<=0.2 && angleKp>=0 && angleKp<=5 && angleKi>=0 && angleKi<=2 && angleKd>=0 && angleKd<=1 &&
-      outputLimit>0 && outputLimit<=40 && iLimit>=0 && iLimit<=outputLimit && rateLimit>0 && rateLimit<=45 &&
-      dHz>0 && dHz<=50 && base>=1 && base<=180 && std::fabs(motorSign)==1 &&
+      outputLimit>0 && outputLimit<=100 && iLimit>=0 && iLimit<=outputLimit && rateLimit>0 && rateLimit<=45 &&
+      dHz>0 && dHz<=50 && base>=1 && base<=220 && std::fabs(motorSign)==1 &&
       maxAngle>0 && maxAngle<=30 && maxRate>0 && maxRate<=300 && saturationSeconds>0 && saturationSeconds<=2 && saturationError>0;
   }
 };
@@ -77,8 +77,8 @@ public:
     // independently for each axis; these are commands, not measured forces.
     const double mixed[]={c.base+r,c.base+(axis==Axis::Roll?-r:r),c.base+(axis==Axis::Roll?r:-r),c.base-r};
     for(int n=0;n<4;n++) {
-      o.mixerLimited |= mixed[n]<0 || mixed[n]>220;
-      o.motor[n]=static_cast<unsigned>(std::floor(bound(mixed[n],0,220)+0.5));
+      o.mixerLimited |= mixed[n]<0 || mixed[n]>255;
+      o.motor[n]=static_cast<unsigned>(std::floor(bound(mixed[n],0,255)+0.5));
     }
     // Saturation is reported above; keep controlling with bounded output.
     previous_=rate; previousError_=o.error; initialized_=true; previousMixerLimited_=o.mixerLimited;previousInnerLimited_=o.pidLimited;
@@ -108,8 +108,8 @@ public:
     const double mixed[]={r.base+roll+pitch,r.base-roll+pitch,r.base+roll-pitch,r.base-roll-pitch};
     bool limited=false;
     for(int k=0;k<4;k++) {
-      limited |= mixed[k]<0 || mixed[k]>220;
-      o.roll.motor[k]=o.pitch.motor[k]=static_cast<unsigned>(std::floor(bound(mixed[k],0,220)+.5));
+      limited |= mixed[k]<0 || mixed[k]>255;
+      o.roll.motor[k]=o.pitch.motor[k]=static_cast<unsigned>(std::floor(bound(mixed[k],0,255)+.5));
     }
     o.roll.mixerLimited=o.pitch.mixerLimited=limited;
     roll_.mixerFeedback(limited);pitch_.mixerFeedback(limited);

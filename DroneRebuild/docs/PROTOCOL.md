@@ -15,12 +15,13 @@ App phải chờ ACK và kiểm tra cấu hình board đọc lại qua T, không
 | `ZERO_ROLL` | Disarmed/Fault, gate đã dừng, IMU đã hiệu chuẩn, mẫu mới <20ms; lấy trung bình 100 mẫu đứng yên (rate ≤1°/s, accel 0.95–1.05g, khoảng góc ≤0.5°), mốc thô trong ±10°. Xóa VERIFY, reset PID. Không ghi flash. |
 | `ZERO_PITCH` | Như ZERO_ROLL nhưng bù mốc Pitch. Hai mốc độc lập. Đòi đứng yên ở cả ba trục gyro. |
 | `AXIS 0|1` | Disarmed/Fault; 0=Roll, 1=Pitch. Chọn cấu hình riêng trong RAM; xóa VERIFY/reset PID/target. Mỗi lượt chỉ điều khiển một trục. CONFIG và START áp dụng lên trục đang chọn. |
-| `CONFIG kp ki kd angleKp base motorSign outputLimit` | Disarmed/Fault; outputLimit 10–40 với I limit mặc định 10; mọi giá trị finite, sign ±1 |
+| `CONFIG kp ki kd angleKp base motorSign outputLimit` | Disarmed/Fault; outputLimit 10–100 với I limit mặc định 10; Base 1–220; mọi giá trị finite, sign ±1 |
 | `VERIFY 0|1` | Người vận hành xác nhận mapping/cảm biến/đế; không phải board tự đo được chiều lực |
 | `PROPS_REMOVED 0|1` | Xác nhận tháo cánh chỉ cho bench |
 | `ARM epoch` | Epoch hiện tại đọc từ ACK/T; không có phiên Armed/Running khác |
 | `START epoch mode target durationMs` | Mode 0 Rate, 1 Angle, 2 DryRun; chạy liên tục đến STOP hoặc fault. App gửi durationMs=0; firmware bỏ qua đối số durationMs cũ. Đã calibrate, verified, Kp dương; ANGLE cần Angle P dương. Không kiểm tra ngưỡng góc lúc START. |
-| `BENCH epoch index duty durationMs` | Index LF0/RF1/LR2/RR3, duty ≤89 (≤35%), max 2000ms, cần propsRemoved và Armed |
+| `BENCH epoch index duty durationMs` | Index LF0/RF1/LR2/RR3, duty 0–255 theo PWM 8-bit; 100–2000ms hoặc 0 để chạy liên tục; cần propsRemoved và Armed |
+| `BENCH_MULTI epoch lf rf lr rr durationMs` | Thử tổ hợp motor với duty riêng 0–255; ít nhất một duty >0; 100–2000ms hoặc 0 để chạy liên tục; cần propsRemoved và Armed. Không thay đổi lệnh BENCH cũ |
 | `KEEPALIVE` | Chỉ chủ phiên Running; gửi mỗi 500 ms |
 | `STOP` | Mọi kết nối, ưu tiên cắt output; tăng epoch làm vô hiệu lệnh cũ |
 | `TELEMETRY 50|100` | Disarmed/Fault |
@@ -43,7 +44,7 @@ Các fault: CONFIG, SENSOR, TIMING (dt ngoài 2–20ms), GAINS_ZERO, TARGET, STA
 
 TCP gửi non-blocking trực tiếp qua socket, tối đa256 byte/lượt, giữ cursor khi gửi thiếu hoặc EAGAIN; không dùng `NetworkClient.availableForWrite()` vì core3.3.12 kế thừa giá trị0. App đợi INFO tối đa8s khi kết nối, ACK các lệnh thường2s, thời gian write và đóng transport có giới hạn riêng.
 
-Mặc định output ±20 duty, motor 0–220, base 1–180, rate target ±20°/s, Angle target ±10°. Đổi các giới hạn cố định cần sửa source, chạy test và build lại. Không tự dùng các ngưỡng v0.1 làm khẳng định phù hợp với mọi bố trí đế.
+Mặc định output ±20 duty; cấu hình cho phép output limit 10–100, motor 0–255, base 1–220, rate target ±20°/s, Angle target ±10°. Không tự dùng các giới hạn này làm khẳng định phù hợp với mọi bố trí đế.
 
 ## Góc IMU cho tab 3D
 
@@ -65,7 +66,7 @@ Các mô hình MATLAB/Simulink với layout cấu hình 14 giá trị hiện t�
 
 ## Chạy riêng Roll / Pitch hoặc cả hai
 
-Firmware quảng bá `DUAL_AXIS_V1` trong INFO. `START_BOTH epoch mode rollTarget pitchTarget` dùng cùng mode RATE/ANGLE/DRYRUN cho hai trục, target riêng. Kiểm tra gain/config hợp lệ của cả hai và cùng Base trước khi chạy. PID và tích phân độc lập; trộn chung: LF=B+r+p, RF=B-r+p, LR=B+r-p, RR=B-r-p. Mỗi sign riêng; clamp 0–220, phản hồi bão hòa mixer về cả hai PID. Chỉ xuất qua gate chung, STOP/heartbeat/stale và dry-run như trước.
+Firmware quảng bá `DUAL_AXIS_V1` trong INFO. `START_BOTH epoch mode rollTarget pitchTarget` dùng cùng mode RATE/ANGLE/DRYRUN cho hai trục, target riêng. Kiểm tra gain/config hợp lệ của cả hai và cùng Base trước khi chạy. PID và tích phân độc lập; trộn chung: LF=B+r+p, RF=B-r+p, LR=B+r-p, RR=B-r-p. Mỗi sign riêng; clamp 0–255, phản hồi bão hòa mixer về cả hai PID. Chỉ xuất qua gate chung, STOP/heartbeat/stale và dry-run như trước.
 
 Telemetry T56 giữ nguyên T55, thêm trường 55 `runAxes` (0 Roll, 1 Pitch, 2 cả hai). Khi chạy cả hai, telemetry PID/rate/output chính vẫn là Roll; các góc Roll/Pitch và PWM là đo/lệnh chung. Chưa có đồ thị PID chi tiết riêng cho Pitch khi chạy cả hai.
 

@@ -16,7 +16,7 @@
 #endif
 using namespace rebuild;
 // PWM has ONE writer: guard callback. Control publishes proposals only.
-struct Gate { bool stopped=true,enabled=false; uint32_t epoch=0; uint64_t deadline=0,hb=0,sample=0; unsigned duty[4]={}; const char* reason="BOOT"; } gate;
+struct Gate { bool stopped=true,enabled=false,ramping=false; uint32_t epoch=0; uint64_t deadline=0,hb=0,sample=0,rampStart=0,rampEnd=0; unsigned duty[4]={},rampDuty[4]={}; const char* reason="BOOT"; } gate;
 portMUX_TYPE gateMux=portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t commands, replies, samples;
 struct Command { uint32_t owner,id; char text[180]; };
@@ -31,15 +31,33 @@ esp_timer_handle_t guardTimer;
 const char* stateName(State s) { switch(s) { case State::Armed:return "ARMED";case State::Running:return "RUNNING";case State::Fault:return "FAULT";default:return "DISARMED"; } }
 Gate snapshot() { portENTER_CRITICAL(&gateMux); Gate g=gate; portEXIT_CRITICAL(&gateMux); return g; }
 void emergency(const char* why) {
-  portENTER_CRITICAL(&gateMux); gate.stopped=true;gate.enabled=false;gate.epoch++;gate.reason=why; portEXIT_CRITICAL(&gateMux);
+  portENTER_CRITICAL(&gateMux); gate.stopped=true;gate.enabled=false;gate.ramping=false;gate.epoch++;gate.reason=why; portEXIT_CRITICAL(&gateMux);
+}
+bool beginSoftStop(uint64_t now,unsigned durationMs) {
+  portENTER_CRITICAL(&gateMux);
+  const bool ok=!gate.stopped && gate.enabled && !gate.ramping && durationMs>=500 && durationMs<=10000;
+  if(ok) {
+    gate.ramping=true;gate.deadline=0;gate.rampStart=now;gate.rampEnd=now+uint64_t(durationMs)*1000;gate.reason="SOFT_STOP";
+    for(int k=0;k<4;k++)gate.rampDuty[k]=gate.duty[k];
+  }
+  portEXIT_CRITICAL(&gateMux);
+  return ok;
 }
 void guard(void*) {
   Gate g=snapshot(); const uint64_t now=esp_timer_get_time();
-  if(!g.stopped && g.enabled && ((g.deadline && now>=g.deadline) || now-g.sample>=100000 || now-g.hb>=2000000)) {
+  if(g.ramping && now>=g.rampEnd) { emergency("SOFT_STOP_DONE");g=snapshot(); }
+  if(!g.ramping && !g.stopped && g.enabled && ((g.deadline && now>=g.deadline) || now-g.sample>=100000 || now-g.hb>=2000000)) {
     emergency(g.deadline && now>=g.deadline?"DURATION":now-g.sample>=100000?"STALE_CONTROL":"HEARTBEAT"); g.enabled=false;
   }
   bool ok=true;
-  for(int k=0;k<4;k++) ok=ledcWrite(hw::motors[k],g.enabled && !g.stopped?g.duty[k]:0) && ok;
+  for(int k=0;k<4;k++) {
+    unsigned commanded=g.enabled && !g.stopped?g.duty[k]:0;
+    if(g.ramping && now<g.rampEnd) {
+      const uint64_t remaining=g.rampEnd-now,total=g.rampEnd-g.rampStart;
+      commanded=unsigned((uint64_t(g.rampDuty[k])*remaining+total/2)/total);
+    }
+    ok=ledcWrite(hw::motors[k],commanded) && ok;
+  }
   if(!ok) { pwmReady=false; emergency("PWM"); }
 }
 void reply(uint32_t id,bool ok,const char* message,uint32_t owner=0) {
@@ -54,13 +72,13 @@ void controlTask(void*) {
   uint64_t calibrationStart=esp_timer_get_time(),lastSample=0;
   uint32_t seq=0,missed=0,late=0; unsigned telem=50;
   ImuSample a; double angles[2]={},rates[2]={},dt=.005; Output output;
-  Mode mode=Mode::Rate; double target=0; bool bench=false; unsigned benchMotor=0,benchDuty=0;
+  Mode mode=Mode::Rate; double target=0; bool bench=false; unsigned benchDuty[4]={0,0,0,0};
   TickType_t wake=xTaskGetTickCount();
   auto publish=[&](bool enable) {
     portENTER_CRITICAL(&gateMux);
     if(gate.epoch==session.epoch && !gate.stopped) {
       gate.enabled=enable;gate.deadline=session.deadline;gate.hb=session.heartbeatAt;gate.sample=session.sampleAt;
-      for(int k=0;k<4;k++) gate.duty[k]=bench?(k==int(benchMotor)?benchDuty:0):output.motor[k];
+      for(int k=0;k<4;k++) gate.duty[k]=bench?benchDuty[k]:output.motor[k];
     }
     portEXIT_CRITICAL(&gateMux);
   };
@@ -72,15 +90,20 @@ void controlTask(void*) {
     Command cmd;
     for(int budget=0;budget<4 && xQueueReceive(commands,&cmd,0)==pdTRUE;budget++) {
       Config& cfg=configs[axis];
-      bool ok=false; const char* response="INVALID"; unsigned epoch,duration,motor,duty,hz; int which; double value; char extra;
+      bool ok=false; const char* response="INVALID"; unsigned epoch,duration,motor,duty,hz,b0,b1,b2,b3; int which; double value; char extra;
       if(!strcmp(cmd.text,"INFO")) {
-        Line l;l.owner=cmd.owner; snprintf(l.text,sizeof(l.text),"INFO,%s,%s,%s %s,WHO_%02X,source_%s,AP_%s,STA_%s,beta_%.3f,gyroBias_%.6f_%.6f_%.6f,pwm_%d,DUAL_AXIS_V1",hw::version,hw::profile,__DATE__,__TIME__,imu.identity(),rebuildSourceId,WiFi.softAPIP().toString().c_str(),WiFi.localIP().toString().c_str(),hw::beta,bias[0],bias[1],bias[2],pwmReady.load());
+        Line l;l.owner=cmd.owner; snprintf(l.text,sizeof(l.text),"INFO,%s,%s,%s %s,WHO_%02X,source_%s,AP_%s,STA_%s,beta_%.3f,gyroBias_%.6f_%.6f_%.6f,pwm_%d,DUAL_AXIS_V1,MOTOR_BENCH_V2,SOFT_STOP_V1",hw::version,hw::profile,__DATE__,__TIME__,imu.identity(),rebuildSourceId,WiFi.softAPIP().toString().c_str(),WiFi.localIP().toString().c_str(),hw::beta,bias[0],bias[1],bias[2],pwmReady.load());
         if(xQueueSend(replies,&l,0)!=pdTRUE) { droppedReplies++; emergency("REPLY_OVERFLOW"); }
         Line levelInfo;levelInfo.owner=cmd.owner;
         snprintf(levelInfo.text,sizeof(levelInfo.text),"LEVEL,axis_%u,rollRaw_%.6f,rollOffset_%.6f,roll_%.6f,pitchRaw_%.6f,pitchOffset_%.6f,pitch_%.6f,ready_%d",axis,attitude.roll(),levels[0].offset(),angles[0],attitude.pitch(),levels[1].offset(),angles[1],levels[axis].ready());
         if(xQueueSend(replies,&levelInfo,0)!=pdTRUE) { droppedReplies++;emergency("REPLY_OVERFLOW"); }
         ok=true;response="INFO";
       } else if(!strcmp(cmd.text,"STOP")) { emergency("STOP");ok=true;response="STOP"; }
+      else if(sscanf(cmd.text,"SOFT_STOP %u %c",&duration,&extra)==1) {
+        ok=session.state==State::Running && beginSoftStop(now,duration);
+        if(ok) { session.state=State::Disarmed;session.owner=0;session.deadline=0;session.reason="SOFT_STOP";controller.reset();dualController.reset();output=Output{};bench=false; }
+        response="SOFT_STOP";
+      }
       else if(!strcmp(cmd.text,"KEEPALIVE")) { ok=cmd.owner==session.owner && session.state==State::Running; if(ok) session.heartbeat(cmd.owner,now);response="KEEPALIVE"; }
       else if(sscanf(cmd.text,"ARM %u %c",&epoch,&extra)==1) {
         ok=pwmReady && session.arm(cmd.owner,epoch,now);
@@ -103,8 +126,11 @@ void controlTask(void*) {
           portENTER_CRITICAL(&gateMux);gate.reason="RUNNING_BOTH";portEXIT_CRITICAL(&gateMux); }
         response="START_BOTH";
       } else if(sscanf(cmd.text,"BENCH %u %u %u %u %c",&epoch,&motor,&duty,&duration,&extra)==4) {
-        ok=props && motor<4 && duty<=89 && duration>=1 && duration<=2000 && session.start(cmd.owner,epoch,now,duration);
-        if(ok) { both=false;bench=true;benchMotor=motor;benchDuty=duty;target=0;output=Output{};portENTER_CRITICAL(&gateMux);gate.reason="BENCH";portEXIT_CRITICAL(&gateMux); } response="BENCH";
+        ok=props && motor<4 && duty<=255 && (duration==0 || (duration>=100 && duration<=2000)) && session.start(cmd.owner,epoch,now,duration);
+        if(ok) { both=false;bench=true;for(auto& v:benchDuty)v=0;benchDuty[motor]=duty;target=0;output=Output{};portENTER_CRITICAL(&gateMux);gate.reason="BENCH";portEXIT_CRITICAL(&gateMux); } response="BENCH";
+      } else if(sscanf(cmd.text,"BENCH_MULTI %u %u %u %u %u %u %c",&epoch,&b0,&b1,&b2,&b3,&duration,&extra)==6) {
+        ok=props && (b0||b1||b2||b3) && b0<=255 && b1<=255 && b2<=255 && b3<=255 && (duration==0 || (duration>=100 && duration<=2000)) && session.start(cmd.owner,epoch,now,duration);
+        if(ok) { both=false;bench=true;benchDuty[0]=b0;benchDuty[1]=b1;benchDuty[2]=b2;benchDuty[3]=b3;target=0;output=Output{};portENTER_CRITICAL(&gateMux);gate.reason="BENCH_MULTI";portEXIT_CRITICAL(&gateMux); } response="BENCH_MULTI";
       } else if(session.state==State::Disarmed || session.state==State::Fault) {
         if(!strcmp(cmd.text,"CALIBRATE")) {
           for(auto& level:levels)level.reset();available=imu.begin();calibrated=false;count=0;for(auto &v:sum)v=0;calibrationStart=now;lastSample=0;verified=false;ok=available;response="CALIBRATE";

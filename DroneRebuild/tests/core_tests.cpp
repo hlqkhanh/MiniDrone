@@ -41,7 +41,7 @@ int main() {
     for(int n=0;n<2400;n++) {
       o=pid.step(c,Mode::Rate,20,0,0,.005,axis);
       assert(!std::strcmp(o.fault,"NONE") && o.mixerLimited);
-      for(auto m:o.motor)assert(m<=220);
+      for(auto m:o.motor)assert(m<=255);
     }
     c.base=80;
   }
@@ -88,9 +88,11 @@ int main() {
   for(int k=0;k<4;k++)assert(pair.roll.motor[k]==singleOutput.motor[k]);
   pc.motorSign=-1;dual.reset();pair=dual.step(rc,pc,Mode::Rate,2,3,0,0,0,0,.005);
   assert(pair.roll.motor[0]==79 && pair.roll.motor[1]==75 && pair.roll.motor[2]==85 && pair.roll.motor[3]==81);
-  pc.motorSign=1;rc.base=pc.base=180;rc.kp=pc.kp=5;
+  pc.motorSign=1;rc.base=pc.base=220;rc.kp=pc.kp=5;rc.outputLimit=pc.outputLimit=100;
   pair=dual.step(rc,pc,Mode::Rate,20,20,0,0,0,0,.005);
-  for(auto m:pair.roll.motor)assert(m<=220);
+  for(auto m:pair.roll.motor)assert(m<=255);
+  Config bounds;bounds.kp=1;bounds.base=220;bounds.outputLimit=100;assert(bounds.valid());
+  bounds.base=221;assert(!bounds.valid());bounds.base=220;bounds.outputLimit=101;assert(!bounds.valid());
   rc.base=pc.base=1;pair=dual.step(rc,pc,Mode::Rate,20,20,0,0,0,0,.005);
   assert(pair.roll.mixerLimited && pair.pitch.mixerLimited);
   pc.base=2;pair=dual.step(rc,pc,Mode::Rate,0,0,0,0,0,0,.005);

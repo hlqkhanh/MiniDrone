@@ -1,0 +1,91 @@
+TÀI LIỆU THAM KHẢO: ESP32 + MPU6050 ĐIỀU KHIỂN CÂN BẰNG 3 TRỤC
+=================================================================
+
+1. MPU-6000/MPU-6050 Product Specification – InvenSense
+https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Datasheet.pdf
+
+Tham khảo: cấu tạo MPU6050, accelerometer/gyroscope ba trục, dải đo,
+tần số lấy mẫu, bộ lọc và giới hạn do không có magnetometer.
+
+2. MPU-6000/MPU-6050 Register Map
+https://github.com/libdriver/mpu6050/blob/main/datasheet/mpu6050_register_map.pdf
+
+Tham khảo: GYRO_CONFIG, ACCEL_CONFIG, DLPF, bộ chia tần số lấy mẫu
+và các thanh ghi đọc dữ liệu cảm biến.
+
+3. PX4 Multicopter Controller Diagrams
+https://docs.px4.io/v1.14/en/flight_stack/controller_diagrams
+
+Tham khảo kiến trúc:
+Attitude → Rate setpoint → Rate PID → Control allocation → Motor.
+
+4. PX4 Multicopter PID Tuning Guide
+https://github.com/PX4/PX4-Autopilot/blob/main/docs/en/config_mc/pid_tuning_guide_multicopter.md
+
+Tham khảo: PID Rate Roll/Pitch/Yaw, thứ tự tuning, chống tích lũy bão hòa,
+mixer saturation và Airmode.
+
+5. PX4 Control Allocation
+https://docs.px4.io/v1.13/en/concept/control_allocation
+
+Tham khảo: chuyển thrust và mô-men Roll/Pitch/Yaw thành lệnh cho bốn motor
+LF/RF/LR/RR.
+
+6. PX4 Airmode and Mixer Saturation
+https://docs.px4.io/v1.18/en/config_mc/pid_tuning_guide_multicopter#airmode-mixer-saturation
+
+Tham khảo: xử lý khi lệnh motor vượt giới hạn, desaturation và duy trì quyền
+điều khiển attitude khi mixer chạm biên.
+
+7. ArduPilot Copter Attitude Control
+https://en.ardupilot.org/dev/docs/apmcopter-programming-attitude-control-2.html
+
+Tham khảo: sai số góc → tốc độ mục tiêu → Rate PID → mixer motor và cách
+ưu tiên điều khiển attitude.
+
+8. ArduPilot General Attitude Controller Description
+https://en.ardupilot.org/copter/docs/traditional-helicopter-control-system.html
+
+Tham khảo: vòng Angle, vòng Rate, giới hạn tích phân, feed-forward và ảnh hưởng
+của sai lệch trọng tâm.
+
+9. Mahony, Hamel, Pflimlin – Non-linear Complementary Filters on SO(3)
+https://core.ac.uk/download/pdf/52787176.pdf
+
+Tham khảo: ước lượng attitude bằng quaternion/ma trận quay, kết hợp gyro với
+accelerometer và ước lượng độ lệch gyro.
+
+10. Euston và cộng sự – A Complementary Filter for Attitude Estimation
+https://users.cecs.anu.edu.au/~Jonghyuk.Kim/pdf/2008_Euston_iros_v1.04.pdf
+
+Tham khảo: kết hợp accelerometer ở tần số thấp với gyro ở tần số cao và ảnh
+hưởng của gia tốc động lên vector trọng lực đo được.
+
+11. Brescianini, Hehn, D’Andrea – Nonlinear Quadrocopter Attitude Control
+https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/154099/eth-7387-01.pdf
+
+Tham khảo: sai số attitude bằng quaternion, điều khiển phi tuyến và ưu tiên
+vector thrust khi sai số attitude lớn.
+
+
+THỨ TỰ ĐỌC ĐỂ XỬ LÝ BÀI TOÁN HIỆN TẠI
+======================================
+
+1. MPU6050 Datasheet và Register Map.
+2. PX4 Controller Diagrams.
+3. PX4 PID Tuning Guide.
+4. PX4 Control Allocation và Airmode.
+5. ArduPilot Attitude Control.
+6. Mahony Complementary Filter.
+7. ETH Nonlinear Attitude Control.
+
+
+MỤC TIÊU TRIỂN KHAI PHÙ HỢP VỚI ESP32 + MPU6050
+================================================
+
+- Giữ Roll/Pitch bằng Outer Angle + Inner Rate.
+- Thêm Inner Yaw Rate PID với mục tiêu 0°/s.
+- Không dùng Outer Yaw Angle tuyệt đối vì MPU6050 không có magnetometer.
+- Dùng mixer Roll–Pitch–Yaw theo đúng chiều CW/CCW.
+- Thêm control allocation/desaturation, ưu tiên Roll/Pitch hơn Yaw.
+- Tune ba vòng Rate trước, sau đó mới tune Outer Angle Roll/Pitch.

@@ -24,11 +24,11 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer display = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private StreamWriter? telemetryLog, eventLog;
     private uint id, epoch, operation; private string state = "DISCONNECTED"; private DateTime received;
-    private bool calibrated, armedHere, runningHere, stopping, closing, replay, connecting;
+    private bool calibrated, armedHere, runningHere, stopping, softStopping, closing, replay, connecting;
     private int latestMode;
     private int boardAxis;
     private int telemetryAxis;
-    private bool pitchSupported, outerPidSupported, dualSupported, applying;
+    private bool pitchSupported, outerPidSupported, dualSupported, multiBenchSupported, softStopSupported, applying;
     private int appliedScope=-1;
     private readonly string[]?[] boardSettings=new string[]?[2];
     private readonly bool[] gainsEdited=new bool[2];
@@ -66,7 +66,7 @@ public partial class MainWindow : Window
         heartbeat.Tick += async (_, _) => { if (runningHere && !stopping) await Act(async () => await Request("KEEPALIVE")); };
         display.Tick += (_, _) => { if (stream != null && !connecting && (DateTime.UtcNow - received).TotalSeconds > 1) Status.Text = received==DateTime.MinValue?"Đã mở kết nối · chưa có dữ liệu IMU. Xem Thông tin board và nhật ký.":"Dữ liệu đã cũ · chưa xác định trạng thái board. Gửi STOP để kết thúc phiên."; UpdateUi(); Draw(); };
         display.Start(); heartbeat.Start();
-        PreviewKeyDown += async (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; await Stop(); } };
+        PreviewKeyDown += async (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; await Stop(true); } };
         Loaded += async (_, _) => { UpdateUi(); Draw(); await LoadDroneModel(); };
     }
     internal async Task LoadDroneModel()
@@ -129,7 +129,7 @@ public partial class MainWindow : Window
     {
         if(connecting)return;connecting=true;UpdateUi();
         try {
-            await Disconnect(); replay = false;dualSupported=false;appliedScope=-1;pitchSupported=false;outerPidSupported=false;boardSettings[0]=boardSettings[1]=null;boardAxis=0; history.Clear();latest=null;ResetPlotView();AcceptedSummary.Text="Chưa nhận cấu hình từ board.";
+            await Disconnect(); replay = false;dualSupported=false;multiBenchSupported=false;appliedScope=-1;pitchSupported=false;outerPidSupported=false;boardSettings[0]=boardSettings[1]=null;boardAxis=0; history.Clear();latest=null;ResetPlotView();AcceptedSummary.Text="Chưa nhận cấu hình từ board.";
             cancellation=new CancellationTokenSource();var token=cancellation.Token;
             var generation=connectionGeneration;
             if (Transport.SelectedIndex == 0) {
@@ -166,7 +166,7 @@ public partial class MainWindow : Window
     private void Receive(string line)
     {
         var f = line.Split(',');
-        if(f[0]=="INFO" && f.Contains("DUAL_AXIS_V1"))dualSupported=true;
+        if(f[0]=="INFO") { if(f.Contains("DUAL_AXIS_V1"))dualSupported=true;if(f.Contains("MOTOR_BENCH_V2"))multiBenchSupported=true;if(f.Contains("SOFT_STOP_V1"))softStopSupported=true; }
         if (f.Length >= 5 && f[0] == "ACK" && uint.TryParse(f[1], out var n) && uint.TryParse(f[3], out var ep))
         { epoch=ep; Event(line); if (pending.TryGetValue(n, out var p)) p.TrySetResult(line); return; }
         if ((f.Length == 45 || f.Length==50 || f.Length==53 || f.Length==55 || f.Length==56) && f[0] == "T")
@@ -222,6 +222,11 @@ public partial class MainWindow : Window
         }
     }
     private double Num(TextBox b) { if (!double.TryParse(b.Text, NumberStyles.Float,CultureInfo.InvariantCulture,out var n)||!double.IsFinite(n)) throw new ArgumentException("Invalid number: " + b.Text);return n; }
+    private uint UInt(TextBox box,uint min,uint max,string name) {
+        if(!uint.TryParse(box.Text,NumberStyles.Integer,CultureInfo.InvariantCulture,out var value) || value<min || value>max)
+            throw new ArgumentException($"{name} phải là số nguyên từ {min} đến {max}.");
+        return value;
+    }
     private void Fresh() { if (stream==null || state=="DISCONNECTED" || replay || (DateTime.UtcNow-received).TotalSeconds>1) throw new InvalidOperationException("Need fresh board telemetry"); }
     private void SaveAxisEditor() {
         axisSettings[editedAxis]=new[]{Kp,Ki,Kd,AngleKp,BaseDuty,Sign,Limit,Target,AngleKi,AngleKd}.Select(x=>x.Text).ToArray();
@@ -314,7 +319,22 @@ public partial class MainWindow : Window
         string command=RunAxes.SelectedIndex==2?FormattableString.Invariant($"START_BOTH {epoch} {Mode.SelectedIndex} {Num(BothRollTarget):G9} {Num(PitchTarget):G9}"):FormattableString.Invariant($"START {epoch} {Mode.SelectedIndex} {Num(Target):G9} 0");
         await Request(command);if(op==operation){runningHere=true;armedHere=false;}
     }
-    private async void BenchClick(object s,RoutedEventArgs e)=>await Act(async()=>{ Fresh();if(!armedHere||PropsRemoved.IsChecked!=true)throw new InvalidOperationException("Remove props, confirm, then ARM");var op=operation;await Request(FormattableString.Invariant($"BENCH {epoch} {Motor.SelectedIndex} {Num(BenchDuty):G9} 1000"));if(op==operation){runningHere=true;armedHere=false;} });
+    private async void BenchClick(object s,RoutedEventArgs e)=>await Act(async()=>{
+        Fresh();if(!armedHere||PropsRemoved.IsChecked!=true)throw new InvalidOperationException("Tháo toàn bộ cánh, xác nhận, rồi ARM.");
+        var op=operation;uint duration=BenchContinuous.IsChecked==true?0:UInt(BenchDuration,100,2000,"Thời gian");string command;
+        if(BenchMode.SelectedIndex==0) {
+            command=$"BENCH {epoch} {Motor.SelectedIndex} {UInt(BenchDuty,0,255,"Duty")} {duration}";
+        } else {
+            if(!multiBenchSupported)throw new InvalidOperationException("Cần nạp firmware MOTOR_BENCH_V2 để thử nhiều motor.");
+            uint lf=BenchLF.IsChecked==true?UInt(BenchLFDuty,0,255,"Duty LF"):0;
+            uint rf=BenchRF.IsChecked==true?UInt(BenchRFDuty,0,255,"Duty RF"):0;
+            uint lr=BenchLR.IsChecked==true?UInt(BenchLRDuty,0,255,"Duty LR"):0;
+            uint rr=BenchRR.IsChecked==true?UInt(BenchRRDuty,0,255,"Duty RR"):0;
+            if((lf|rf|lr|rr)==0)throw new InvalidOperationException("Chọn ít nhất một motor với duty lớn hơn 0.");
+            command=$"BENCH_MULTI {epoch} {lf} {rf} {lr} {rr} {duration}";
+        }
+        await Request(command);if(op==operation){runningHere=true;armedHere=false;}
+    });
     private async void InfoClick(object s,RoutedEventArgs e)=>await Act(async()=>await Request("INFO"));
     private async void CalibrateClick(object s,RoutedEventArgs e)=>await Act(async()=>{ await Stop();await Request("CALIBRATE"); });
     private async void ZeroRollClick(object s,RoutedEventArgs e)=>await Act(async()=>{
@@ -326,14 +346,31 @@ public partial class MainWindow : Window
         Event("Đã lấy mốc ngang trên board. Mốc mất khi reset hoặc hiệu chuẩn IMU lại.");
         await Request("INFO");
     });
-    private async void StopClick(object s,RoutedEventArgs e)=>await Stop();
+    private async void StopClick(object s,RoutedEventArgs e)=>await Stop(true);
     private void ConfirmationAdded(object s,RoutedEventArgs e) { if(IsLoaded)UpdateUi(); }
     private async void ConfirmationRemoved(object s,RoutedEventArgs e) { if(IsLoaded && stream!=null)await Stop(); }
-    private async Task Stop()
+    private async Task Stop(bool allowSoftStop=false)
     {
-        ++operation;if(stopping)return;stopping=true;runningHere=armedHere=false;UpdateUi();
-        try { if(stream!=null)await Send("STOP",++id); }
-        catch(Exception ex){Event("STOP send failed: "+ex.Message);}finally{stopping=false;}
+        ++operation;
+        if(softStopping) {
+            softStopping=false;stopping=true;runningHere=armedHere=false;UpdateUi();
+            try { if(stream!=null)await Send("STOP",++id);Event("Đã cắt PWM ngay lập tức."); }
+            catch(Exception ex){Event("STOP send failed: "+ex.Message);}finally{stopping=false;UpdateUi();}
+            return;
+        }
+        if(stopping)return;
+        bool ramp=allowSoftStop && runningHere && SafeStop.IsChecked==true && softStopSupported;
+        stopping=true;runningHere=armedHere=false;softStopping=ramp;UpdateUi();
+        try {
+            if(stream!=null)await Send(ramp?"SOFT_STOP 3000":"STOP",++id);
+            if(ramp) {
+                Event("Đang hạ PWM motor từ từ trong 3 giây. Nhấn Esc lần nữa để cắt ngay.");
+                await Task.Delay(3200);
+                softStopping=false;
+            }
+        }
+        catch(Exception ex){softStopping=false;Event("STOP send failed: "+ex.Message);}
+        finally{stopping=false;UpdateUi();}
     }
     private async Task Disconnect()
     {
@@ -345,6 +382,7 @@ public partial class MainWindow : Window
         var oldStream=stream;var oldSerial=serial;var oldTcp=tcp;var oldCancellation=cancellation;
         attitudeDisplay.Reset();orientationReceived=default;
         stream=null;serial=null;tcp=null;cancellation=null;oldCancellation?.Cancel();
+        softStopping=false;softStopSupported=false;
         foreach(var p in pending.Values)p.TrySetCanceled();runningHere=armedHere=false;state="DISCONNECTED";
         Status.Text="Chưa kết nối · motor chưa được ra lệnh";UpdateUi();
         try { await Task.Run(()=>{try{oldStream?.Dispose();}finally{oldSerial?.Dispose();oldTcp?.Dispose();}}).WaitAsync(TimeSpan.FromSeconds(2)); }
@@ -553,9 +591,14 @@ public partial class MainWindow : Window
         StartButton.IsEnabled=fresh && armedHere && Verified.IsChecked==true && !bench && !stopping;
         BenchButton.IsEnabled=fresh && armedHere && PropsRemoved.IsChecked==true && bench && !stopping;
         StartButton.Visibility=bench?Visibility.Collapsed:Visibility.Visible;BenchButton.Visibility=bench?Visibility.Visible:Visibility.Collapsed;
-        foreach(var control in new Control[]{Kp,Ki,Kd,AngleKp,AngleKi,AngleKd,BaseDuty,Sign,Limit,Mode,Target,Motor,BenchDuty,AxisChoice,RunAxes,PitchTarget,BothRollTarget,RollPidButton,PitchPidButton})control.IsEnabled=!busy;
+        SingleBenchPanel.Visibility=BenchMode.SelectedIndex==0?Visibility.Visible:Visibility.Collapsed;
+        MultiBenchPanel.Visibility=BenchMode.SelectedIndex==1?Visibility.Visible:Visibility.Collapsed;
+        BenchButton.Content=BenchMode.SelectedIndex==1?"2. Chạy nhóm motor":"2. Chạy motor";
+        foreach(var control in new Control[]{Kp,Ki,Kd,AngleKp,AngleKi,AngleKd,BaseDuty,Sign,Limit,Mode,Target,Motor,BenchDuty,BenchMode,BenchDuration,BenchContinuous,BenchLF,BenchRF,BenchLR,BenchRR,BenchLFDuty,BenchRFDuty,BenchLRDuty,BenchRRDuty,AxisChoice,RunAxes,PitchTarget,BothRollTarget,RollPidButton,PitchPidButton})control.IsEnabled=!busy;
+        SafeStop.IsEnabled=connected && softStopSupported && !softStopping;
+        BenchDuration.IsEnabled=!busy && BenchContinuous.IsChecked!=true;
         AngleKp.IsEnabled=AngleKi.IsEnabled=AngleKd.IsEnabled=!busy && Mode.SelectedIndex==1;
-        RunHint.Text=replay?"Đang xem dữ liệu mô phỏng; chưa thể ARM.":!fresh?"Kết nối và đợi dữ liệu mới từ board.":!calibrated?"Giữ board đứng yên để hoàn tất hiệu chuẩn.":runningHere?"Đang chạy · Esc hoặc DỪNG MOTOR để dừng.":armedHere?(bench?"Đã ARM · bấm Chạy motor trong 15 giây.":"Đã ARM · bấm Bắt đầu trong 15 giây."):bench?"Tháo cánh, đánh dấu xác nhận, rồi ARM.":Verified.IsChecked!=true?"Hoàn tất kiểm tra IMU, chiều lực và đế trước khi xác nhận.":"Áp dụng cấu hình, chờ board xác nhận, rồi ARM.";
+        RunHint.Text=softStopping?"Đang hạ PWM trong 3 giây · nhấn Esc lần nữa để cắt ngay.":replay?"Đang xem dữ liệu mô phỏng; chưa thể ARM.":!fresh?"Kết nối và đợi dữ liệu mới từ board.":!calibrated?"Giữ board đứng yên để hoàn tất hiệu chuẩn.":runningHere?"Đang chạy · Esc hoặc DỪNG MOTOR để dừng.":armedHere?(bench?"Đã ARM · bấm Chạy motor trong 15 giây.":"Đã ARM · bấm Bắt đầu trong 15 giây."):bench?"Tháo cánh, đánh dấu xác nhận, rồi ARM.":Verified.IsChecked!=true?"Hoàn tất kiểm tra IMU, chiều lực và đế trước khi xác nhận.":"Áp dụng cấu hình, chờ board xác nhận, rồi ARM.";
         if(latest!=null) {
             RollValue.Text=latest[17].ToString("F2",CultureInfo.InvariantCulture)+"°";
             PitchValue.Text=double.IsFinite(latest[19])?latest[19].ToString("F2",CultureInfo.InvariantCulture)+"°":"—";
@@ -571,7 +614,7 @@ public partial class MainWindow : Window
         ZeroRollButton.Content=$"Khung ngang · Lấy mốc {(AxisChoice.SelectedIndex==0?"Roll":"Pitch")} 0°";
         StartButton.Content=RunAxes.SelectedIndex==2?"2. Chạy cả hai":"2. Bắt đầu "+(RunAxes.SelectedIndex==1?"Pitch":"Roll");
         ApplyButton.Content=RunAxes.SelectedIndex==2?"Apply PID cả Roll + Pitch":"Áp dụng PID "+(RunAxes.SelectedIndex==1?"Pitch":"Roll");
-        BaseDutyLabel.Text=RunAxes.SelectedIndex==2?"Duty nền dùng chung Roll + Pitch · Base":"Duty nền · Base";
+        BaseDutyLabel.Text=RunAxes.SelectedIndex==2?"Duty nền dùng chung Roll + Pitch · Base · 1–220":"Duty nền · Base · 1–220";
         BothPidSelector.Visibility=RunAxes.SelectedIndex==2?Visibility.Visible:Visibility.Collapsed;
         RollPidButton.Content=(editedAxis==0?"▶ ":"")+"PID Roll";
         PitchPidButton.Content=(editedAxis==1?"▶ ":"")+"PID Pitch";
@@ -607,6 +650,13 @@ public partial class MainWindow : Window
         UpdateUi();
     }
     private async void TestTabChanged(object s,SelectionChangedEventArgs e) { if(!IsLoaded || e.Source!=TestTabs)return;if(armedHere || runningHere)await Stop();UpdateUi(); }
+    private void BenchModeChanged(object s,SelectionChangedEventArgs e) { if(IsLoaded && e.Source==BenchMode)UpdateUi(); }
+    private void BenchContinuousChanged(object s,RoutedEventArgs e) { if(IsLoaded)UpdateUi(); }
+    private void SetBenchSelection(bool lf,bool rf,bool lr,bool rr) { BenchLF.IsChecked=lf;BenchRF.IsChecked=rf;BenchLR.IsChecked=lr;BenchRR.IsChecked=rr; }
+    private void BenchAllClick(object s,RoutedEventArgs e)=>SetBenchSelection(true,true,true,true);
+    private void BenchDiagonalOneClick(object s,RoutedEventArgs e)=>SetBenchSelection(true,false,false,true);
+    private void BenchDiagonalTwoClick(object s,RoutedEventArgs e)=>SetBenchSelection(false,true,true,false);
+    private void BenchClearClick(object s,RoutedEventArgs e)=>SetBenchSelection(false,false,false,false);
     private void ResetPlotView()
     {
         plotFollowing=true;plotSpan=12_000_000;plotY.Clear();drawnY.Clear();
@@ -665,13 +715,23 @@ public partial class MainWindow : Window
         if(MotorPlot==null)return;
         if(!plotFollowing)ClampPlotEnd();
         if(PlotViewStatus!=null)PlotViewStatus.Text=(plotFollowing?"Trực tiếp":"Đang xem lại")+$" · {plotSpan/1e6:0.##} s · Cuộn: zoom · Kéo: xem lại";
+        if(history.Count>0) {
+            var sample=plotFollowing?history[^1]:history.LastOrDefault(v=>v[0]<=plotEnd)??history[0];
+            string Value(double value,string suffix="")=>double.IsFinite(value)?value.ToString("0.00",CultureInfo.InvariantCulture)+suffix:"—";
+            AnglePlotValues.Text=$"Roll {Value(sample[17],"°")} · Pitch {Value(sample[19],"°")}"+(latestMode==1?$" · Mục tiêu {Value(sample[16],"°")}":"");
+            RatePlotValues.Text=$"Đo {Value(sample[2]," °/s")} · Mục tiêu {Value(sample[3]," °/s")}";
+            OutputPlotValues.Text=$"Output {Value(sample[8]," duty")}";
+            MotorPlotValues.Text=$"LF {Value(sample[9])} · RF {Value(sample[10])} · LR {Value(sample[11])} · RR {Value(sample[12])}";
+        } else {
+            AnglePlotValues.Text="Roll — · Pitch —";RatePlotValues.Text="Đo — · Mục tiêu —";OutputPlotValues.Text="Output —";MotorPlotValues.Text="LF — · RF — · LR — · RR —";
+        }
         var angles=new List<(int index,Brush color)>{(17,Brushes.DodgerBlue)};
         if(pitchSupported && !replay)angles.Add((19,Brushes.SeaGreen));
         if(latestMode==1)angles.Add((16,Brushes.DarkOrange));
         Plot(AnglePlot,angles.ToArray());
         Plot(RatePlot,[(2,Brushes.DodgerBlue),(3,Brushes.DarkOrange)]);
         Plot(OutputPlot,[(8,Brushes.MediumPurple)]);
-        Plot(MotorPlot,[(9,Brushes.SeaGreen),(10,Brushes.Gray),(11,Brushes.DarkCyan),(12,Brushes.SlateGray)]);
+        Plot(MotorPlot,[(9,Brushes.SeaGreen),(10,Brushes.OrangeRed),(11,Brushes.DeepSkyBlue),(12,Brushes.DarkViolet)]);
     }
     private void Plot(Canvas canvas,(int index,Brush color)[] series)
     {

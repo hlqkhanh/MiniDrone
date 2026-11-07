@@ -25,7 +25,7 @@ App mới USB baud 460800; không dùng app cũ baud 115200. Tháo cánh ở bư
 - Xác nhận Props removed; ARM; chọn từng LF/RF/LR/RR, duty nhỏ; BENCH chỉ 1 giây.
 - Ghi đúng motor và chiều quay; kiểm tra STOP, hết thời hạn, đóng app/mất Wi-Fi.
 - Chưa xác nhận chiều lực sửa chỉ bằng quay không cánh. Xác nhận lực trên bố trí cơ khí phù hợp riêng.
-- Không thay duty hoặc kéo dài thời gian để bỏ qua giới hạn 35%/2s.
+- Bench hỗ trợ duty 0–255 và chạy liên tục; luôn đối chiếu cấu hình đang chọn trước khi ARM.
 
 ## 4. Đế và chiều lực
 

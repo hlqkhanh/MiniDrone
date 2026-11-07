@@ -220,7 +220,7 @@ Nhìn theo đầu drone đã đánh dấu:
 6. Đợi dừng, ghi kết quả. Muốn chạy lượt mới phải ARM mới.
 7. Lặp với RF, LR, RR.
 
-Bench firmware giới hạn duty ≤89, thời gian ≤2 giây; nút app hiện chạy 1 giây. Nếu duty thấp không quay, kiểm tra nguồn, dây và ma sát; không mặc định motor hỏng hoặc tăng ngay lên tối đa. Mọi mức tăng cần phù hợp phần cứng.
+Bench firmware cho phép toàn dải PWM 8-bit 0–255 và có thể chạy hữu hạn hoặc liên tục đến STOP/Esc. Nếu duty thấp không quay, kiểm tra nguồn, dây và ma sát; duty là lệnh PWM, không phải phép đo lực đẩy.
 
 ### 7.3. Kiểm tra dừng khi vẫn không cánh
 
@@ -421,7 +421,7 @@ Trong ANGLE mode, đường đo cần về gần target và ở lại. Trong RAT
 
 - Tím: phần sửa duty PID.
 - Xanh lá/xám: LF/RF; dữ liệu CSV có đủ cả bốn motor.
-- PID chạm±limit khác mixer bị cắt về0–220. Có thể PID chạm biên nhiều nhưng mixer vẫn báo0.
+- PID chạm ±limit khác mixer bị cắt về 0–255. Có thể PID chạm biên nhiều nhưng mixer vẫn báo 0.
 - Duty không phải lực hoặc RPM. PWM còn biên chưa chứng minh đủ mô-men sửa.
 
 Vùng sau Stop phải tách khỏi vùng đang Running. Thân về ngang khi motor đã tắt có thể do đế/dây hoặc thao tác, chưa phải PID thành công.
@@ -433,7 +433,7 @@ Vùng sau Stop phải tách khỏi vùng đang Running. Thân về ngang khi mot
 | Connect lỗi / không có telemetry | Kiểm tra COM, cáp dữ liệu, app khác đang chiếm COM, đúng sketch và baud |
 | WHO khác70/71 hoặc sensor unavailable | Kiểm tra board/chip/SPI/nguồn; không ép code chấp nhận chip chưa xác minh |
 | Calibration không xong | Giữ yên, kiểm tra rung/nguồn; timeout30s thì sửa nguyên nhân rồi CAL lại |
-| CONFIG bị từ chối | STOP trước; dùng dấu chấm thập phân; số hữu hạn; output limit10–40 vì I limit mặc định10 |
+| CONFIG bị từ chối | STOP trước; dùng dấu chấm thập phân; số hữu hạn; output limit 10–100 vì I limit mặc định 10; Base 1–220 |
 | ARM bị từ chối | Xem trạng thái/epoch; STOP rồi chờ telemetry mới; không có phiên Armed khác |
 | START bị từ chối | Kiểm tra calibrated, verified, gain dương, AngleP dương khi Angle, độ lớn Roll≤5°, duration1–10000ms, ARM chưa quá15s |
 | SATURATION_TRACKING | Output chạm biên + error>5°/s hoặc mixer clipping kéo dài; không tự nâng limit để chạy tiếp |
