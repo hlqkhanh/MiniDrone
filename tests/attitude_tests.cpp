@@ -2,7 +2,7 @@
 #include <cassert>
 #include <iostream>
 int main() {
-  RollLevel level;
+  AngleZeroCalibration level;
   assert(!level.zero());
   for(int n=0;n<100;n++)level.observe(5.4,0,1);
   assert(level.zero());assert(std::fabs(level.angle(5.4))<1e-9);

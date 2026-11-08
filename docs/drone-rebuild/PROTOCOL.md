@@ -73,3 +73,16 @@ Telemetry T56 giữ nguyên T55, thêm trường 55 `runAxes` (0 Roll, 1 Pitch, 
 App tách trục chỉnh gain/lấy mốc khỏi phạm vi chạy. Apply cả hai gửi AXIS/CONFIG_CASCADE tuần tự, không tự CALIBRATE/ZERO. Gain trục chưa sửa được đọc lại từ board; gain đã nhập được giữ riêng. Base hai trục phải bằng nhau, không tự thay đổi Base của Roll. Firmware cũ vẫn chạy đơn trục nhưng không hỗ trợ cả hai.
 
 Mốc cân bằng hiện tại vẫn nằm trong RAM như trước: đổi trục/Apply/START không xóa mốc; reset hoặc nạp firmware sẽ xóa mốc. Ghi lại gain đã chỉnh trước khi nạp.
+
+
+## Hạ bán tự động STABILIZED_DESCENT_V1
+
+INFO có capability `STABILIZED_DESCENT_V1`, thay cho SOFT_STOP_V1. Ramp SOFT_STOP đã bị loại bỏ. App mới có nút hạ riêng; STOP/Esc luôn yêu cầu cắt ngay.
+
+- `DESCEND epoch rate floor`: đúng owner/epoch, Running hai trục Angle, không BENCH/DryRun. Rate 0.1–10 duty/s; floor < Base ban đầu và > tổng outputLimit hai trục.
+- `DESCEND_PAUSE epoch`, `DESCEND_RESUME epoch`: giữ/tiếp tục giảm collective. Không resume tại sàn.
+- `DESCEND_BOOST epoch delta`: tăng tối đa 10 duty mỗi command (app dùng 5), không vượt Base ban đầu, sau đó giữ.
+
+T56 giữ layout, state vẫn RUNNING và reason DESCENDING/DESCENT_PAUSED/DESCENT_FLOOR. Dòng `DESCENT,epoch,reason,collective,floor,rate` gửi owner khoảng mỗi 500 ms. Base trong T vẫn là config đã Apply; collective động nằm ở dòng DESCENT. Watchdog và TCP disconnect vẫn cắt theo chính sách cũ. Chạm floor không disarm và không chứng minh đã đáp.
+
+Chi tiết: [STABILIZED_DESCENT.md](STABILIZED_DESCENT.md).

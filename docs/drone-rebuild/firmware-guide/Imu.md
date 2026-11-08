@@ -7,12 +7,12 @@ Source: [Imu.h](../../../firmware/DroneRebuild/Imu.h). Bài này không yêu c�
 ```text
 Imu                 → giao tiếp SPI, đọc và quy đổi sample
 Attitude            → kết hợp gyro/accel để ước lượng hướng thân
-RollLevel           → giữ cửa sổ mẫu và bù mốc ZERO
+AngleZeroCalibration → giữ cửa sổ mẫu và bù mốc ZERO
 
 ImuSample           → DTO chứa một sample
 ```
 
-Theo góc nhìn SE, `Imu` giống adapter phần cứng; `Attitude` là thuật toán có state; `RollLevel` là một cửa sổ dữ liệu có điều kiện hợp lệ. Chúng không tự điều khiển motor.
+Theo góc nhìn SE, `Imu` giống adapter phần cứng; `Attitude` là thuật toán có state; `AngleZeroCalibration` xác lập mốc góc 0 bằng một cửa sổ dữ liệu có điều kiện hợp lệ. Chúng không tự điều khiển motor.
 
 ## 2. Hai cảm biến trong IMU cho biết gì?
 
@@ -167,9 +167,9 @@ Pitch rate = gx−biasX
 
 Không lấy hai góc Roll liên tiếp rồi chia dt để thay nhánh gyro. Tư thế quaternion và controller PID góc Euler cũng không phải cùng một thuật toán.
 
-## 11. RollLevel: cửa sổ mẫu để lấy mốc
+## 11. AngleZeroCalibration: cửa sổ mẫu để lấy mốc
 
-Tên class là RollLevel nhưng có hai object cho Roll/Pitch. Các variable:
+`AngleZeroCalibration` xác lập mốc góc 0, dùng chung cơ chế cho cả Roll và Pitch. Firmware tạo một object riêng cho mỗi trục. Các variable:
 
 - `values_[100]`: vòng đệm 100 góc gần nhất phù hợp.
 - `at_`: vị trí ghi tiếp theo.

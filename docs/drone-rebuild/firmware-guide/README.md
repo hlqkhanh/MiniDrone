@@ -6,7 +6,7 @@ Bộ tài liệu dành cho người đã biết lập trình nhưng mới làm n
 
 Đối chiếu source ngày **08/11/2026**. Không sửa source trong quá trình viết.
 
-## 1. Một chương trình, không phải bảy firmware độc lập
+## 1. Một chương trình, không phải tám firmware độc lập
 
 `DroneRebuild.ino` là sketch Arduino chính. Các header `.h` cung cấp cấu hình, data type và thuật toán. Chúng cùng được biên dịch thành chương trình nạp lên ESP32.
 
@@ -17,6 +17,7 @@ App WPF trên máy tính là một chương trình khác: gửi cấu hình/lệ
 | `Hardware.h` | [Hardware.md](Hardware.md) | GPIO, SPI, hằng số và hệ trục |
 | `DroneRebuild.ino` | [DroneRebuild.md](DroneRebuild.md) | Entry point, task, queue, timer, giao tiếp, PWM |
 | `Imu.h` | [Imu.md](Imu.md) | Thanh ghi, dữ liệu cảm biến, bias, quaternion, mốc góc |
+| `StabilizedDescent.h` | [StabilizedDescent.md](StabilizedDescent.md) | Giảm collective, giữ PID và chờ người dùng STOP |
 | `RollCore.h` | [RollCore.md](RollCore.md) | Config, PID, mixer và state machine |
 | `NonBlockingTx.h` | [NonBlockingTx.md](NonBlockingTx.md) | Partial send, retry, buffer gửi |
 | `BuildInfo.h` | [BuildInfo.md](BuildInfo.md) | Nhận dạng source và thông tin build |

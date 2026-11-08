@@ -25,7 +25,7 @@
    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"><Border Background="#E8EDF5" CornerRadius="16" Padding="12,6" Margin="0,0,14,0"><TextBlock x:Name="ConnectionBadge" Text="CHƯA KẾT NỐI" FontSize="11" FontWeight="SemiBold"/></Border><Button Content="■  DỪNG MOTOR   ·   Esc" Background="#B42332" BorderBrush="#B42332" Foreground="White" FontWeight="SemiBold" MinHeight="44" Click="StopClick"/></StackPanel>
   </Grid>
   <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="340"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-   <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0"><StackPanel>
+   <ScrollViewer x:Name="ControlsScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0"><StackPanel>
     <Border Style="{StaticResource Card}"><StackPanel>
      <TextBlock Text="1   Kết nối thiết bị" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12"/>
      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><ComboBox x:Name="Transport" SelectedIndex="0" SelectionChanged="TransportChanged"><ComboBoxItem Content="USB"/><ComboBoxItem Content="Wi-Fi / TCP"/></ComboBox><TextBox x:Name="Address" Grid.Column="2" Text="COM6" ToolTip="USB: cổng COM. Wi-Fi: địa chỉ IP của ESP32."/></Grid>
@@ -80,15 +80,20 @@
       </StackPanel></TabItem>
      </TabControl>
     </StackPanel></Border>
-    <Border Style="{StaticResource Card}" Margin="0,12,0,0"><StackPanel><TextBlock Text="Lưu dữ liệu" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10"/><TextBlock Text="Đế, nguồn/pin, cánh, góc đầu" Style="{StaticResource Label}"/><TextBox x:Name="SessionNote" Text="Chưa ghi: đế, nguồn/pin, cánh, góc đầu" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="56"/><Button x:Name="LogButton" Content="Bắt đầu ghi log" Click="LogClick" Margin="0,10,0,8"/><Button Content="Mở CSV mô phỏng…" Click="ReplayClick"/></StackPanel></Border>
-   </StackPanel></ScrollViewer>
-   <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,10,4,0" Padding="14"><StackPanel>
+   <Border Style="{StaticResource Card}" Margin="0,12,0,0" Padding="14"><StackPanel>
     <TextBlock Text="3   Cho phép và bắt đầu" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10"/>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions><Button x:Name="ArmButton" Content="1. ARM" Click="ArmClick"/><Button x:Name="StartButton" Grid.Column="2" Content="2. Bắt đầu Roll" Style="{StaticResource Primary}" Click="StartClick"/><Button x:Name="BenchButton" Grid.Column="2" Content="2. Chạy motor" ToolTip="Chạy motor đã chọn trong 1 giây." Visibility="Collapsed" Style="{StaticResource Primary}" Click="BenchClick"/></Grid>
-    <CheckBox x:Name="SafeStop" Content="Hạ PWM từ từ trong 3 giây khi bấm STOP/Esc" IsEnabled="False" Margin="0,10,0,0"/>
-    <TextBlock Text="Khi đang hạ PWM, nhấn Esc lần nữa để cắt motor ngay lập tức." Foreground="#66758A" FontSize="11" TextWrapping="Wrap" Margin="22,3,0,0"/>
-    <TextBlock x:Name="RunHint" Text="Kết nối và đợi cảm biến sẵn sàng." Foreground="#66758A" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
-   </StackPanel></Border></Grid>
+    <TextBlock Text="Hạ có giữ cân bằng" FontWeight="SemiBold" Margin="0,12,0,6"/>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions>
+     <StackPanel><TextBlock Text="Giảm Base · duty/s" Style="{StaticResource Label}"/><TextBox x:Name="DescentRate" Text="1"/></StackPanel>
+     <StackPanel Grid.Column="2"><TextBlock Text="Base tối thiểu" Style="{StaticResource Label}"/><TextBox x:Name="DescentFloor" Text="80"/></StackPanel>
+    </Grid>
+    <Button x:Name="DescendButton" Content="↓ Bắt đầu hạ · S" ToolTip="S — bắt đầu hạ" Click="DescendClick" Margin="0,8,0,5"/>
+    <WrapPanel><Button x:Name="DescentToggle" Content="⏸ Tạm giữ · Space" ToolTip="Space — tạm giữ hoặc tiếp tục giảm" Click="DescentToggleClick" Margin="0,0,5,5"/><Button x:Name="DescentBoost" Content="↑ Base +5 · W" ToolTip="W — tăng Base +5 và giữ" Click="DescentBoostClick" Margin="0,0,0,5"/></WrapPanel>
+    <TextBlock x:Name="DescentStatus" Visibility="Collapsed" Foreground="#66758A" FontSize="11" TextWrapping="Wrap"/>
+   </StackPanel></Border>
+    <Border Style="{StaticResource Card}" Margin="0,12,0,0"><StackPanel><TextBlock Text="Lưu dữ liệu" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10"/><TextBlock Text="Đế, nguồn/pin, cánh, góc đầu" Style="{StaticResource Label}"/><TextBox x:Name="SessionNote" Text="Chưa ghi: đế, nguồn/pin, cánh, góc đầu" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="56"/><Button x:Name="LogButton" Content="Bắt đầu ghi log" Click="LogClick" Margin="0,10,0,8"/><Button Content="Mở CSV mô phỏng…" Click="ReplayClick"/></StackPanel></Border>
+   </StackPanel></ScrollViewer>
    <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Border Style="{StaticResource Card}" Padding="12,6"><TextBlock x:Name="Status" Text="Chưa kết nối · chưa có dữ liệu từ board" TextWrapping="Wrap"/></Border>
 

@@ -420,13 +420,13 @@ Trong chế độ bench, `publish()` chỉ cấp duty cho motor được chọn 
 ```cpp
 Imu imu;
 Attitude attitude;
-RollLevel levels[2];
+AngleZeroCalibration levels[2];
 bool available = imu.begin();
 ```
 
 - `Imu`: class đọc mẫu cảm biến.
 - `Attitude`: lớp ước lượng tư thế.
-- `RollLevel levels[2]`: lưu mốc cân bằng riêng cho hai trục.
+- `AngleZeroCalibration levels[2]`: lưu mốc cân bằng riêng cho hai trục.
 - `imu.begin()`: khởi tạo IMU; chi tiết bus/SPI và cấu hình cảm biến nằm trong `Imu.h` thật, hiện chưa được cung cấp.
 
 Đọc mẫu:
@@ -532,7 +532,7 @@ double raw[] = {attitude.roll(), attitude.pitch()};
 
 Lấy góc Roll/Pitch thô từ estimator.
 
-`RollLevel` tạo mốc cân bằng:
+`AngleZeroCalibration` tạo mốc cân bằng:
 
 ```cpp
 levels[k].observe(raw[k], rates[k], norm);
@@ -694,6 +694,6 @@ Không chỉnh PID bay thật chỉ dựa vào một ví dụ số. Trước ti�
 - đơn vị của `ax/ay/az` và `gx/gy/gz`;
 - định nghĩa `Imu::begin()` và `Imu::sample()`;
 - định nghĩa `Attitude`, quaternion và thuật toán cập nhật;
-- định nghĩa `RollLevel`, ngưỡng zero và cách tính offset.
+- định nghĩa `AngleZeroCalibration`, ngưỡng zero và cách tính offset.
 
 Không nên suy ra các chi tiết này chỉ từ tên class hoặc lời gọi function trong `.ino`.

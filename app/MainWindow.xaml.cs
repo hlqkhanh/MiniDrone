@@ -24,11 +24,14 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer display = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private StreamWriter? telemetryLog, eventLog;
     private uint id, epoch, operation; private string state = "DISCONNECTED"; private DateTime received;
-    private bool calibrated, armedHere, runningHere, stopping, softStopping, closing, replay, connecting;
+    private bool calibrated, armedHere, runningHere, stopping, descending, closing, replay, connecting;
+    private bool descentAdjusting;
+    private bool descentShortcutBusy;
+    private string descentPhase="NONE";
     private int latestMode;
     private int boardAxis;
     private int telemetryAxis;
-    private bool pitchSupported, outerPidSupported, dualSupported, multiBenchSupported, softStopSupported, applying;
+    private bool pitchSupported, outerPidSupported, dualSupported, multiBenchSupported, descentSupported, applying;
     private int appliedScope=-1;
     private readonly string[]?[] boardSettings=new string[]?[2];
     private readonly bool[] gainsEdited=new bool[2];
@@ -66,7 +69,7 @@ public partial class MainWindow : Window
         heartbeat.Tick += async (_, _) => { if (runningHere && !stopping) await Act(async () => await Request("KEEPALIVE")); };
         display.Tick += (_, _) => { if (stream != null && !connecting && (DateTime.UtcNow - received).TotalSeconds > 1) Status.Text = received==DateTime.MinValue?"Đã mở kết nối · chưa có dữ liệu IMU. Xem Thông tin board và nhật ký.":"Dữ liệu đã cũ · chưa xác định trạng thái board. Gửi STOP để kết thúc phiên."; UpdateUi(); Draw(); };
         display.Start(); heartbeat.Start();
-        PreviewKeyDown += async (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; await Stop(true); } };
+        PreviewKeyDown += HandleFlightShortcut;
         Loaded += async (_, _) => { UpdateUi(); Draw(); await LoadDroneModel(); };
     }
     internal async Task LoadDroneModel()
@@ -166,7 +169,7 @@ public partial class MainWindow : Window
     private void Receive(string line)
     {
         var f = line.Split(',');
-        if(f[0]=="INFO") { if(f.Contains("DUAL_AXIS_V1"))dualSupported=true;if(f.Contains("MOTOR_BENCH_V2"))multiBenchSupported=true;if(f.Contains("SOFT_STOP_V1"))softStopSupported=true; }
+        if(f[0]=="INFO") { if(f.Contains("DUAL_AXIS_V1"))dualSupported=true;if(f.Contains("MOTOR_BENCH_V2"))multiBenchSupported=true;if(f.Contains("STABILIZED_DESCENT_V1"))descentSupported=true; }
         if (f.Length >= 5 && f[0] == "ACK" && uint.TryParse(f[1], out var n) && uint.TryParse(f[3], out var ep))
         { epoch=ep; Event(line); if (pending.TryGetValue(n, out var p)) p.TrySetResult(line); return; }
         if ((f.Length == 45 || f.Length==50 || f.Length==53 || f.Length==55 || f.Length==56) && f[0] == "T")
@@ -207,7 +210,11 @@ public partial class MainWindow : Window
             telemetryAxis=boardAxis;
             received=DateTime.UtcNow;epoch=uint.Parse(f[4],CultureInfo.InvariantCulture);calibrated=f[34]=="1";latestMode=int.Parse(f[5],CultureInfo.InvariantCulture);
             if (state!=f[3]) Event($"STATE,{f[3]},epoch={epoch},reason={f[33]}");state=f[3];
-            if(state!="RUNNING" && state!="ARMED") runningHere=armedHere=false;
+            if(state!="RUNNING" && state!="ARMED") { runningHere=armedHere=false;descending=false; }
+            else if(state=="RUNNING") {
+                descending=f[33].StartsWith("DESCENT",StringComparison.Ordinal) || f[33]=="DESCENDING";
+                descentPhase=descending?f[33]:"NONE";
+            }
             latest=v;history.Add(v); if(history.Count>1200)history.RemoveRange(0,history.Count-1200);
             Status.Text=$"Board: {StateText()} · {(calibrated?"IMU sẵn sàng":$"Hiệu chuẩn {f[6]}/500")} · {f[33]}";
             RefreshAcceptedSummary();
@@ -217,6 +224,14 @@ public partial class MainWindow : Window
             if(f.Length>=7 && f[0]=="HEALTH") {
                 if(uint.TryParse(f[1],out var epHealth))epoch=epHealth;
                 if(f[2]!="1" || f[3]!="1")calibrated=false;
+            }
+            if(f.Length==6 && f[0]=="DESCENT" && uint.TryParse(f[1],out var de) && de==epoch && runningHere &&
+               double.TryParse(f[3],NumberStyles.Float,CultureInfo.InvariantCulture,out var collective) && double.IsFinite(collective) &&
+               double.TryParse(f[4],NumberStyles.Float,CultureInfo.InvariantCulture,out var floor) && double.IsFinite(floor) &&
+               double.TryParse(f[5],NumberStyles.Float,CultureInfo.InvariantCulture,out var reduction) && double.IsFinite(reduction)) {
+                descending=true;
+                descentPhase=f[2];
+                DescentStatus.Text=FormattableString.Invariant($"{f[2]} · Base {collective:F1} · sàn {floor:F1} · giảm {reduction:F1} duty/s");
             }
             Event(line);
         }
@@ -346,31 +361,79 @@ public partial class MainWindow : Window
         Event("Đã lấy mốc ngang trên board. Mốc mất khi reset hoặc hiệu chuẩn IMU lại.");
         await Request("INFO");
     });
-    private async void StopClick(object s,RoutedEventArgs e)=>await Stop(true);
+    private async void StopClick(object s,RoutedEventArgs e)=>await Stop();
     private void ConfirmationAdded(object s,RoutedEventArgs e) { if(IsLoaded)UpdateUi(); }
     private async void ConfirmationRemoved(object s,RoutedEventArgs e) { if(IsLoaded && stream!=null)await Stop(); }
-    private async Task Stop(bool allowSoftStop=false)
+    private async Task Stop()
     {
         ++operation;
-        if(softStopping) {
-            softStopping=false;stopping=true;runningHere=armedHere=false;UpdateUi();
-            try { if(stream!=null)await Send("STOP",++id);Event("Đã cắt PWM ngay lập tức."); }
-            catch(Exception ex){Event("STOP send failed: "+ex.Message);}finally{stopping=false;UpdateUi();}
-            return;
-        }
         if(stopping)return;
-        bool ramp=allowSoftStop && runningHere && SafeStop.IsChecked==true && softStopSupported;
-        stopping=true;runningHere=armedHere=false;softStopping=ramp;UpdateUi();
-        try {
-            if(stream!=null)await Send(ramp?"SOFT_STOP 3000":"STOP",++id);
-            if(ramp) {
-                Event("Đang hạ PWM motor từ từ trong 3 giây. Nhấn Esc lần nữa để cắt ngay.");
-                await Task.Delay(3200);
-                softStopping=false;
-            }
-        }
-        catch(Exception ex){softStopping=false;Event("STOP send failed: "+ex.Message);}
+        stopping=true;runningHere=armedHere=descending=false;UpdateUi();
+        try { if(stream!=null)await Send("STOP",++id); }
+        catch(Exception ex){Event("STOP send failed: "+ex.Message);}
         finally{stopping=false;UpdateUi();}
+    }
+    private async Task DescentAction(Func<Task> action)
+    {
+        // A rejected descent adjustment must not turn an active flight into a motor cut.
+        try { await action(); }
+        catch(Exception ex) { Event("DESCENT: "+ex.Message);Status.Text="Lệnh hạ chưa được xác nhận: "+ex.Message; }
+        finally { UpdateUi(); }
+    }
+    private async void DescendClick(object s,RoutedEventArgs e)=>await DescentAction(BeginDescent);
+    private async Task BeginDescent() {
+        Fresh();
+        if(!descentSupported || !runningHere || latestMode!=1 || RunAxes.SelectedIndex!=2)
+            throw new InvalidOperationException("Cần firmware STABILIZED_DESCENT_V1 và đang chạy cả Roll + Pitch ở ANGLE.");
+        double rate=Num(DescentRate),floor=Num(DescentFloor);
+        if(rate<.1 || rate>10 || floor<1 || floor>220)throw new ArgumentException("Tốc độ giảm 0.1–10 duty/s; Base tối thiểu 1–220, dưới Base hiện tại và đủ headroom.");
+        if(boardSettings[0] is {} roll && boardSettings[1] is {} pitch) {
+            double start=double.Parse(roll[4],CultureInfo.InvariantCulture);
+            double headroom=double.Parse(roll[6],CultureInfo.InvariantCulture)+double.Parse(pitch[6],CultureInfo.InvariantCulture);
+            if(floor>=start || floor<=headroom)throw new ArgumentException(FormattableString.Invariant($"Base tối thiểu phải > {headroom:G9} và < {start:G9}."));
+        }
+        await Request(FormattableString.Invariant($"DESCEND {epoch} {rate:G9} {floor:G9}"));
+        descending=true;descentPhase="DESCENDING";DescentStatus.Text="Đang giảm Base.";
+    }
+    private async Task AdjustDescent(Func<Task> action) {
+        if(descentAdjusting)return;
+        descentAdjusting=true;UpdateUi();
+        try { await DescentAction(action); }
+        finally { descentAdjusting=false;UpdateUi(); }
+    }
+    private async Task ToggleDescent()=>await AdjustDescent(async()=>{
+        Fresh();
+        if(!descending || descentPhase is not ("DESCENDING" or "DESCENT_PAUSED"))return;
+        bool resume=descentPhase=="DESCENT_PAUSED";
+        await Request($"{(resume?"DESCEND_RESUME":"DESCEND_PAUSE")} {epoch}");
+        descentPhase=resume?"DESCENDING":"DESCENT_PAUSED";
+    });
+    private async void DescentToggleClick(object s,RoutedEventArgs e)=>await ToggleDescent();
+    private async Task BoostDescent()=>await AdjustDescent(async()=>{
+        Fresh();await Request($"DESCEND_BOOST {epoch} 5");descentPhase="DESCENT_PAUSED";
+    });
+    private async void DescentBoostClick(object s,RoutedEventArgs e)=>await BoostDescent();
+    private async void HandleFlightShortcut(object sender,KeyEventArgs e) {
+        bool editing=Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase or PasswordBox or ComboBox or ComboBoxItem;
+        if(e.Key!=Key.Escape && (editing || Keyboard.Modifiers!=ModifierKeys.None || e.Key is not (Key.S or Key.Space or Key.W)))return;
+        e.Handled=true;
+        await ExecuteFlightShortcut(e.Key,e.IsRepeat,editing);
+    }
+    private async Task ExecuteFlightShortcut(Key key,bool repeat=false,bool editing=false) {
+        // Emergency STOP remains available while editing and during another request.
+        if(key==Key.Escape) { await Stop();return; }
+        if(repeat || editing || descentShortcutBusy)return;
+        UpdateUi();
+        Func<Task>? action=key switch {
+            Key.S when DescendButton.IsEnabled => ()=>DescentAction(BeginDescent),
+            Key.Space when DescentToggle.IsEnabled => ToggleDescent,
+            Key.W when DescentBoost.IsEnabled => BoostDescent,
+            _ => null
+        };
+        if(action==null)return;
+        descentShortcutBusy=true;
+        try { await action(); }
+        finally { descentShortcutBusy=false; }
     }
     private async Task Disconnect()
     {
@@ -382,7 +445,7 @@ public partial class MainWindow : Window
         var oldStream=stream;var oldSerial=serial;var oldTcp=tcp;var oldCancellation=cancellation;
         attitudeDisplay.Reset();orientationReceived=default;
         stream=null;serial=null;tcp=null;cancellation=null;oldCancellation?.Cancel();
-        softStopping=false;softStopSupported=false;
+        descending=false;descentSupported=false;
         foreach(var p in pending.Values)p.TrySetCanceled();runningHere=armedHere=false;state="DISCONNECTED";
         Status.Text="Chưa kết nối · motor chưa được ra lệnh";UpdateUi();
         try { await Task.Run(()=>{try{oldStream?.Dispose();}finally{oldSerial?.Dispose();oldTcp?.Dispose();}}).WaitAsync(TimeSpan.FromSeconds(2)); }
@@ -490,24 +553,29 @@ public partial class MainWindow : Window
                 if(scenario=="closed-peer")return;
                 var n=command.Split(' ')[0];
                 if(scenario=="delayed-info")await Task.Delay(2500,cancel.Token);
-                await writer.WriteLineAsync("INFO,DroneRebuild-TEST,LOOPBACK");
+                await writer.WriteLineAsync("INFO,DroneRebuild-TEST,LOOPBACK,STABILIZED_DESCENT_V1");
                 await writer.WriteLineAsync($"ACK,{(scenario=="wrong-ack"?"99999":n)},OK,0,INFO");
                 var f=Enumerable.Repeat("0",45).ToArray();f[0]="T";f[1]="4";f[2]="20000";f[3]="DISARMED";f[6]="500";f[9]="1";f[28]="0.005";f[33]="BOOT";f[34]="1";f[41]="80";f[42]="1";f[43]="20";
                 // Deliberately split a telemetry line across TCP packets.
                 var text=string.Join(',',f)+"\n";
                 await writer.WriteAsync(text[..30]);await writer.FlushAsync();await Task.Delay(10,cancel.Token);await writer.WriteAsync(text[30..]);await writer.FlushAsync();
-                int simulatedAxis=0;
+                int simulatedAxis=0;bool simulatedRunning=false,simulatedBoth=false;int simulatedMode=0;string simulatedReason="RUNNING";
                 string[][] fakeConfigs=[["0.4","0.1","0.01","2","0","0","80","1","20"],["0.6","0.2","0.02","3","0","0","80","-1","20"]];
                 while(!cancel.IsCancellationRequested) {
                     var incoming=await reader.ReadLineAsync(cancel.Token);if(incoming==null)break;
                     var parts=incoming.Split(' ');if(parts.Length<2)continue;
+                    if(parts[1]=="STOP")simulatedRunning=false;
+                    if(parts[1]=="START_BOTH"){simulatedRunning=true;simulatedBoth=true;simulatedMode=int.Parse(parts[3]);simulatedReason="RUNNING_BOTH";}
+                    if(parts[1]=="DESCEND")simulatedReason="DESCENDING";
+                    if(parts[1]=="DESCEND_PAUSE" || parts[1]=="DESCEND_BOOST")simulatedReason="DESCENT_PAUSED";
+                    if(parts[1]=="DESCEND_RESUME")simulatedReason="DESCENDING";
                     if(parts[1]=="AXIS")simulatedAxis=int.Parse(parts[2]);
                     if(parts[1]=="CONFIG_CASCADE")fakeConfigs[simulatedAxis]=parts.Skip(2).ToArray();
                     await writer.WriteLineAsync($"ACK,{parts[0]},OK,0,{parts[1]}");
                     var frame=Enumerable.Repeat("0",56).ToArray();Array.Copy(f,frame,f.Length);
-                    frame[2]="40000";frame[45]=simulatedAxis.ToString();
+                    frame[2]="40000";frame[45]=simulatedAxis.ToString();frame[3]=simulatedRunning?"RUNNING":"DISARMED";frame[5]=simulatedMode.ToString();frame[33]=simulatedReason;
                     var cfg=fakeConfigs[simulatedAxis];
-                    frame[37]=cfg[0];frame[38]=cfg[1];frame[39]=cfg[2];frame[40]=cfg[3];frame[53]=cfg[4];frame[54]=cfg[5];frame[41]=cfg[6];frame[42]=cfg[7];frame[43]=cfg[8];frame[55]=simulatedAxis.ToString();
+                    frame[37]=cfg[0];frame[38]=cfg[1];frame[39]=cfg[2];frame[40]=cfg[3];frame[53]=cfg[4];frame[54]=cfg[5];frame[41]=cfg[6];frame[42]=cfg[7];frame[43]=cfg[8];frame[55]=simulatedBoth?"2":simulatedAxis.ToString();
                     await writer.WriteLineAsync(string.Join(',',frame));
                 }
             },cancel.Token);
@@ -528,7 +596,7 @@ public partial class MainWindow : Window
                 full[52]="-170";Receive(string.Join(',',full));
                 if(attitudeDisplay.Yaw!=20)throw new IOException("T53 yaw reference not preserved");
                 var cascadeFrame=full.Concat(new[]{"0.3","0.04"}).ToArray();Receive(string.Join(',',cascadeFrame));UpdateUi();
-                if(!outerPidSupported || !AcceptedSummary.Text.Contains("0.3 / 0.04"))throw new IOException("Outer PID T55 readback failed");
+                if(!outerPidSupported || (boardSettings[1]?[8]!="0.3" || boardSettings[1]?[9]!="0.04"))throw new IOException("Outer PID T55 readback failed");
                 int beforeCascadeInvalid=history.Count;cascadeFrame[53]="NaN";Receive(string.Join(',',cascadeFrame));
                 if(history.Count!=beforeCascadeInvalid)throw new IOException("Invalid outer PID readback accepted");
                 AxisChoice.SelectedIndex=1;Kp.Text="0.4";AngleKi.Text="0.3";AngleKd.Text="0.04";
@@ -558,6 +626,34 @@ public partial class MainWindow : Window
                 await StartControl();
                 if(!Events.Text.Contains("START_BOTH 0 0 1 -2"))throw new IOException("Dual target start framing failed");
                 await Stop();
+                Mode.SelectedIndex=1;armedHere=true;Verified.IsChecked=true;
+                BothRollTarget.Text=PitchTarget.Text="0";
+                await StartControl();await Task.Delay(40);UpdateUi();
+                DescentRate.Text="1";DescentFloor.Text="60";
+                if(!DescendButton.IsEnabled)throw new IOException("Descent not enabled for live dual ANGLE");
+                await ExecuteFlightShortcut(Key.S);await Task.Delay(40);UpdateUi();
+                if(!descending || !runningHere || !DescentToggle.IsEnabled || !Events.Text.Contains("DESCEND 0 1 60"))throw new IOException("Descent start stopped the running session");
+                await Request("KEEPALIVE");
+                await ExecuteFlightShortcut(Key.Space);await Task.Delay(40);UpdateUi();
+                if(descentPhase!="DESCENT_PAUSED" || !DescentToggle.Content.ToString()!.Contains("▶"))throw new IOException("Pause toggle did not become Resume");
+                await ExecuteFlightShortcut(Key.Space);await Task.Delay(40);UpdateUi();
+                if(descentPhase!="DESCENDING" || !DescentToggle.Content.ToString()!.Contains("⏸"))throw new IOException("Resume toggle did not become Pause");
+                Receive("DESCENT,0,DESCENT_FLOOR,60.000000,60.000000,1.000000");
+                UpdateUi();if(DescentToggle.IsEnabled)throw new IOException("Resume enabled at floor");
+                uint beforeIgnored=id;
+                await ExecuteFlightShortcut(Key.Space);
+                await ExecuteFlightShortcut(Key.W,repeat:true);
+                await ExecuteFlightShortcut(Key.W,editing:true);
+                if(id!=beforeIgnored)throw new IOException("Disabled, repeat or editing shortcut sent a command");
+                if(!runningHere || !descending || !DescentStatus.Text.Contains("60.0"))throw new IOException("Floor incorrectly ended flight");
+                await Request("DESCEND_PAUSE 0");await Request("DESCEND_BOOST 0 5");await Request("DESCEND_RESUME 0");
+                await ExecuteFlightShortcut(Key.W);await Task.Delay(40);UpdateUi();
+                if(descentPhase!="DESCENT_PAUSED")throw new IOException("W shortcut did not boost and pause");
+                await DescentAction(()=>throw new InvalidOperationException("Simulated rejected adjustment"));
+                if(!runningHere || !descending)throw new IOException("Rejected adjustment cut motors");
+                int stopAt=Events.Text.Length;await ExecuteFlightShortcut(Key.Escape,editing:true);
+                if(runningHere || descending || !Events.Text[stopAt..].Contains(",STOP") || Events.Text.Contains("SOFT_STOP"))throw new IOException("STOP did not remain immediate");
+                report.AppendLine("PASS dual ANGLE descent start, KEEPALIVE, floor status, pause/resume/boost, rejected adjustment and immediate STOP");
                 RunAxes.SelectedIndex=1;await ApplyPid();
                 if(appliedScope!=1 || boardAxis!=1)throw new IOException("Independent Pitch Apply failed");
                 RunAxes.SelectedIndex=0;await ApplyPid();
@@ -595,10 +691,17 @@ public partial class MainWindow : Window
         MultiBenchPanel.Visibility=BenchMode.SelectedIndex==1?Visibility.Visible:Visibility.Collapsed;
         BenchButton.Content=BenchMode.SelectedIndex==1?"2. Chạy nhóm motor":"2. Chạy motor";
         foreach(var control in new Control[]{Kp,Ki,Kd,AngleKp,AngleKi,AngleKd,BaseDuty,Sign,Limit,Mode,Target,Motor,BenchDuty,BenchMode,BenchDuration,BenchContinuous,BenchLF,BenchRF,BenchLR,BenchRR,BenchLFDuty,BenchRFDuty,BenchLRDuty,BenchRRDuty,AxisChoice,RunAxes,PitchTarget,BothRollTarget,RollPidButton,PitchPidButton})control.IsEnabled=!busy;
-        SafeStop.IsEnabled=connected && softStopSupported && !softStopping;
+        DescendButton.IsEnabled=fresh && descentSupported && runningHere && !descending && !stopping && latestMode==1 && RunAxes.SelectedIndex==2;
+        if(!descending)descentPhase="NONE";
+        bool canAdjust=fresh && descentSupported && runningHere && descending && !stopping && !descentAdjusting;
+        DescentToggle.IsEnabled=canAdjust && (descentPhase is "DESCENDING" or "DESCENT_PAUSED");
+        DescentToggle.Content=descentPhase=="DESCENT_PAUSED"?"▶ Tiếp tục · Space":descentPhase=="DESCENT_FLOOR"?"⏸ Đang giữ ở sàn":"⏸ Tạm giữ · Space";
+        DescentBoost.IsEnabled=canAdjust;
+        DescentRate.IsEnabled=DescentFloor.IsEnabled=!descending;
+        DescentStatus.Visibility=descending?Visibility.Visible:Visibility.Collapsed;
+        if(!descending)DescentStatus.Text="";
         BenchDuration.IsEnabled=!busy && BenchContinuous.IsChecked!=true;
         AngleKp.IsEnabled=AngleKi.IsEnabled=AngleKd.IsEnabled=!busy && Mode.SelectedIndex==1;
-        RunHint.Text=softStopping?"Đang hạ PWM trong 3 giây · nhấn Esc lần nữa để cắt ngay.":replay?"Đang xem dữ liệu mô phỏng; chưa thể ARM.":!fresh?"Kết nối và đợi dữ liệu mới từ board.":!calibrated?"Giữ board đứng yên để hoàn tất hiệu chuẩn.":runningHere?"Đang chạy · Esc hoặc DỪNG MOTOR để dừng.":armedHere?(bench?"Đã ARM · bấm Chạy motor trong 15 giây.":"Đã ARM · bấm Bắt đầu trong 15 giây."):bench?"Tháo cánh, đánh dấu xác nhận, rồi ARM.":Verified.IsChecked!=true?"Hoàn tất kiểm tra IMU, chiều lực và đế trước khi xác nhận.":"Áp dụng cấu hình, chờ board xác nhận, rồi ARM.";
         if(latest!=null) {
             RollValue.Text=latest[17].ToString("F2",CultureInfo.InvariantCulture)+"°";
             PitchValue.Text=double.IsFinite(latest[19])?latest[19].ToString("F2",CultureInfo.InvariantCulture)+"°":"—";

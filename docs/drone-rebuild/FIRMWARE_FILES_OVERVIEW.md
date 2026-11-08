@@ -4,13 +4,14 @@ Muốn đọc giải thích riêng từng file, bắt đầu từ [bộ hướng
 
 Tóm tắt theo source trong `firmware/DroneRebuild/`, đối chiếu ngày **08/11/2026**. Đây là tài liệu để định hướng khi đọc code; phần công thức chi tiết nằm trong [tài liệu PID](PID_FORMULAS_AND_WORKED_EXAMPLES.md).
 
-**Các file này cùng tạo thành một firmware**, không phải bảy chương trình nạp riêng. Arduino bắt đầu từ `setup()` và `loop()` trong `DroneRebuild.ino`; các header `.h` cung cấp cấu hình, data type, function và class được dùng bởi sketch.
+**Các file này cùng tạo thành một firmware**, không phải tám chương trình nạp riêng. Arduino bắt đầu từ `setup()` và `loop()` trong `DroneRebuild.ino`; các header `.h` cung cấp cấu hình, data type, function và class được dùng bởi sketch.
 
 ## 1. Nhìn nhanh toàn bộ thư mục
 
 | File | Nhiệm vụ chính | Câu hỏi file này trả lời |
 | --- | --- | --- |
 | [DroneRebuild.ino](../../firmware/DroneRebuild/DroneRebuild.ino) | Ghép toàn bộ hệ thống: khởi tạo, nhận lệnh, chạy điều khiển, giám sát PWM, gửi dữ liệu | Chương trình chạy theo thứ tự và trao đổi dữ liệu thế nào? |
+| [StabilizedDescent.h](../../firmware/DroneRebuild/StabilizedDescent.h) | Profile giảm collective, pause/resume/boost | Làm sao giữ PID khi giảm Base? |
 | [RollCore.h](../../firmware/DroneRebuild/RollCore.h) | Thuật toán PID, mixer và quản lý phiên điều khiển | Từ góc/rate mục tiêu tính ra lệnh motor thế nào? |
 | [Imu.h](../../firmware/DroneRebuild/Imu.h) | Đọc IMU SPI, ước lượng tư thế và quản lý mốc góc | Góc và tốc độ quay đầu vào lấy từ đâu? |
 | [Hardware.h](../../firmware/DroneRebuild/Hardware.h) | Các hằng số phần cứng và quy ước hệ trục | Chân nào, chiều nào, baud và parameter nền nào được dùng? |
@@ -51,7 +52,7 @@ loop() gửi từng phần về USB / TCP
 
 | Thành phần | Nhiệm vụ |
 | --- | --- |
-| `Gate` và variable `gate` | Giữ state được phép xuất motor, duty đề xuất, epoch, thời gian mẫu/heartbeat và state dừng mềm |
+| `Gate` và variable `gate` | Giữ state được phép xuất motor, duty đề xuất, epoch, thời gian mẫu/heartbeat |
 | `gateMux` | Bảo vệ việc đọc/ghi Gate bằng vùng tới hạn (critical section), vì nhiều ngữ cảnh cùng truy cập |
 | `Command` | Một lệnh đã nhận: ai gửi (`owner`), mã yêu cầu (`id`) và nội dung (`text`) |
 | `Line` | Một dòng cần gửi ra: nội dung và kết nối đích; `owner=0` dùng cho phát tới các đường phù hợp |
@@ -76,10 +77,10 @@ loop() gửi từng phần về USB / TCP
 | `receive()` | Đọc có giới hạn số byte mỗi lượt, ghép tới ký tự xuống dòng, tách `<id> <command>`, đưa vào queue; xử lý dòng sai/tràn |
 | `controlTask()` | Xử lý lệnh, quản lý phiên, đọc/hiệu chuẩn IMU, cập nhật tư thế, tính PID hoặc BENCH và tạo telemetry |
 | `publish()` | Lambda bên trong `controlTask()`: chép đề xuất duty và các mốc thời gian vào Gate nếu epoch còn hợp lệ |
-| `snapshot()` | Sao chép Gate trong vùng tới hạn để đọc một ảnh chụp nhất quán |
-| `emergency()` | Đánh dấu dừng, tắt quyền xuất/ramp, tăng epoch và ghi lý do. PWM thực tế được guard cập nhật theo state đó |
-| `beginSoftStop()` | Bắt đầu dừng mềm: lưu duty hiện tại và khoảng thời gian để giảm duty dần |
-| `guard()` | Kiểm tra state Gate, thời hạn/độ mới dữ liệu trong nhánh chạy thông thường; tính duty khi ramp và ghi PWM |
+| `snapshot()` | Copy Gate trong critical section để đọc một snapshot nhất quán |
+| `emergency()` | Đánh dấu dừng, tắt quyền xuất, tăng epoch và ghi lý do. PWM thực tế được guard cập nhật theo state đó |
+| `StabilizedDescent` | Giảm collective trong controlTask, giữ PID và hỗ trợ pause/resume/boost |
+| `guard()` | Kiểm tra state Gate, thời hạn/độ mới dữ liệu trong mọi phiên chạy, kể cả khi hạ; ghi PWM |
 | `reply()` | Tạo dòng `ACK` cho đúng yêu cầu/kết nối, rồi đưa vào queue phản hồi |
 | `enqueueOutput()` | Chuẩn bị một dòng cho các kênh cần nhận và khởi tạo send cursor riêng USB/TCP |
 | `stateName()` | Đổi enum state thành chữ để đưa vào telemetry |
@@ -112,9 +113,9 @@ loop() gửi từng phần về USB / TCP
 | `ARM`, `START`, `START_BOTH` | Chuẩn bị và bắt đầu phiên điều khiển |
 | `BENCH`, `BENCH_MULTI` | Chạy thử một hoặc nhiều motor bằng duty trực tiếp |
 | `KEEPALIVE` | Cập nhật heartbeat từ kết nối sở hữu phiên |
-| `STOP`, `SOFT_STOP` | Cắt quyền xuất hoặc giảm duty dần theo hai đường xử lý khác nhau |
+| `STOP`, `DESCEND` | STOP cắt quyền xuất; DESCEND giảm collective nhưng vẫn giữ phiên Running và PID |
 
-`receive()` đánh dấu dừng ngay khi nhận đủ dòng `STOP`, trước khi chờ `controlTask()` lấy lệnh từ queue. `SOFT_STOP` giảm duty đang có; trong quá trình ramp này PID không tiếp tục giữ tư thế. Dừng mềm không tự tương đương hạ cánh có điều khiển độ cao.
+`receive()` đánh dấu dừng ngay khi nhận đủ dòng `STOP`, trước khi chờ `controlTask()` lấy lệnh từ queue. Ramp SOFT_STOP đã bỏ. DESCEND giữ PID hai trục Angle khi giảm collective, không tự phát hiện đáp; xem [hướng dẫn](STABILIZED_DESCENT.md).
 
 Chi tiết cú pháp/điều kiện xem [PROTOCOL.md](PROTOCOL.md).
 
@@ -186,9 +187,9 @@ ARM không tự chạy motor. Running cũng không tự bảo đảm PWM khác 0
 
 Chứa một mẫu với `ax/ay/az` theo đơn vị g và `gx/gy/gz` theo °/s. Đây là dữ liệu cảm biến sau quy đổi thang đo, chưa mặc định là mọi góc/rate body đã xử lý xong.
 
-### 5.2. RollLevel
+### 5.2. AngleZeroCalibration
 
-Tên là `RollLevel`, nhưng firmware tạo **hai object** cho Roll và Pitch.
+`AngleZeroCalibration` xác lập mốc góc 0; firmware tạo **hai object** riêng cho Roll và Pitch.
 
 | Function/state | Nhiệm vụ |
 | --- | --- |

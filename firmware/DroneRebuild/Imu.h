@@ -9,7 +9,7 @@ struct ImuSample {
 };
 
 // A fresh, consecutive half-second of stationary samples is required to zero.
-class RollLevel {
+class AngleZeroCalibration {
     unsigned count_ = 0;
     unsigned at_ = 0;
     double values_[100] = {}, sum_ = 0, offset_ = 0;

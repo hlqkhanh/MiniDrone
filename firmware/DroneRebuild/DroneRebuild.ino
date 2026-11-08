@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <atomic>
 #include "RollCore.h"
+#include "StabilizedDescent.h"
 #include "Hardware.h"
 #include "Imu.h"
 #include "BuildInfo.h"
@@ -18,10 +19,10 @@ using namespace rebuild;
 
 // PWM has ONE writer: guard callback. Control publishes proposals only.
 struct Gate {
-    bool stopped = true, enabled = false, ramping = false;
+    bool stopped = true, enabled = false;
     uint32_t epoch = 0;
-    uint64_t deadline = 0, hb = 0, sample = 0, rampStart = 0, rampEnd = 0;
-    unsigned duty[4] = {}, rampDuty[4] = {};
+    uint64_t deadline = 0, hb = 0, sample = 0;
+    unsigned duty[4] = {};
     const char* reason = "BOOT";
 } gate;
 
@@ -76,37 +77,15 @@ void emergency(const char* why) {
     portENTER_CRITICAL(&gateMux);
     gate.stopped = true;
     gate.enabled = false;
-    gate.ramping = false;
     gate.epoch++;
     gate.reason = why;
     portEXIT_CRITICAL(&gateMux);
 }
 
-bool beginSoftStop(uint64_t now, unsigned durationMs) {
-    portENTER_CRITICAL(&gateMux);
-    const bool ok =
-        !gate.stopped && gate.enabled && !gate.ramping && durationMs >= 500 && durationMs <= 10000;
-    if (ok) {
-        gate.ramping = true;
-        gate.deadline = 0;
-        gate.rampStart = now;
-        gate.rampEnd = now + uint64_t(durationMs) * 1000;
-        gate.reason = "SOFT_STOP";
-        for (int k = 0; k < 4; k++)
-            gate.rampDuty[k] = gate.duty[k];
-    }
-    portEXIT_CRITICAL(&gateMux);
-    return ok;
-}
-
 void guard(void*) {
     Gate g = snapshot();
     const uint64_t now = esp_timer_get_time();
-    if (g.ramping && now >= g.rampEnd) {
-        emergency("SOFT_STOP_DONE");
-        g = snapshot();
-    }
-    if (!g.ramping && !g.stopped && g.enabled &&
+    if (!g.stopped && g.enabled &&
         ((g.deadline && now >= g.deadline) || now - g.sample >= 100000 || now - g.hb >= 2000000)) {
         emergency(g.deadline && now >= g.deadline ? "DURATION"
                   : now - g.sample >= 100000      ? "STALE_CONTROL"
@@ -116,10 +95,6 @@ void guard(void*) {
     bool ok = true;
     for (int k = 0; k < 4; k++) {
         unsigned commanded = g.enabled && !g.stopped ? g.duty[k] : 0;
-        if (g.ramping && now < g.rampEnd) {
-            const uint64_t remaining = g.rampEnd - now, total = g.rampEnd - g.rampStart;
-            commanded = unsigned((uint64_t(g.rampDuty[k]) * remaining + total / 2) / total);
-        }
         ok = ledcWrite(hw::motors[k], commanded) && ok;
     }
     if (!ok) {
@@ -147,9 +122,10 @@ void reply(uint32_t id, bool ok, const char* message, uint32_t owner = 0) {
 void controlTask(void*) {
     Imu imu;
     Attitude attitude;
-    RollLevel levels[2];
+    AngleZeroCalibration levels[2];
     Controller controller;
     DualController dualController;
+    StabilizedDescent descent;
     Config configs[2];
     Session session;
     unsigned axis = 0;
@@ -176,6 +152,7 @@ void controlTask(void*) {
             gate.deadline = session.deadline;
             gate.hb = session.heartbeatAt;
             gate.sample = session.sampleAt;
+            if (descent.active()) gate.reason = descent.reason();
             for (int k = 0; k < 4; k++)
                 gate.duty[k] = bench ? benchDuty[k] : output.motor[k];
         }
@@ -189,6 +166,7 @@ void controlTask(void*) {
             session.epoch = g.epoch;
             controller.reset();
             dualController.reset();
+            descent.reset();
             output = Output{};
             bench = false;
         }
@@ -198,6 +176,7 @@ void controlTask(void*) {
             output = Output{};
             controller.reset();
             dualController.reset();
+            descent.reset();
         }
         Command cmd;
         for (int budget = 0; budget < 4 && xQueueReceive(commands, &cmd, 0) == pdTRUE; budget++) {
@@ -206,14 +185,14 @@ void controlTask(void*) {
             const char* response = "INVALID";
             unsigned epoch, duration, motor, duty, hz, b0, b1, b2, b3;
             int which;
-            double value;
+            double value, minimum;
             char extra;
             if (!strcmp(cmd.text, "INFO")) {
                 Line l;
                 l.owner = cmd.owner;
                 snprintf(l.text,
                     sizeof(l.text),
-                    "INFO,%s,%s,%s %s,WHO_%02X,source_%s,AP_%s,STA_%s,beta_%.3f,gyroBias_%.6f_%.6f_%.6f,pwm_%d,DUAL_AXIS_V1,MOTOR_BENCH_V2,SOFT_STOP_V1",
+                    "INFO,%s,%s,%s %s,WHO_%02X,source_%s,AP_%s,STA_%s,beta_%.3f,gyroBias_%.6f_%.6f_%.6f,pwm_%d,DUAL_AXIS_V1,MOTOR_BENCH_V2,STABILIZED_DESCENT_V1",
                     hw::version,
                     hw::profile,
                     __DATE__,
@@ -254,19 +233,21 @@ void controlTask(void*) {
                 emergency("STOP");
                 ok = true;
                 response = "STOP";
-            } else if (sscanf(cmd.text, "SOFT_STOP %u %c", &duration, &extra) == 1) {
-                ok = session.state == State::Running && beginSoftStop(now, duration);
-                if (ok) {
-                    session.state = State::Disarmed;
-                    session.owner = 0;
-                    session.deadline = 0;
-                    session.reason = "SOFT_STOP";
-                    controller.reset();
-                    dualController.reset();
-                    output = Output{};
-                    bench = false;
-                }
-                response = "SOFT_STOP";
+            } else if (sscanf(cmd.text, "DESCEND %u %lf %lf %c", &epoch, &value, &minimum, &extra) == 3) {
+                const auto current = snapshot();
+                ok = calibrated && current.epoch == session.epoch && !current.stopped && current.enabled &&
+                     descent.begin(session, cmd.owner, epoch, configs[0], configs[1], mode,
+                                   both, bench, target, pitchTarget, value, minimum);
+                response = ok ? "DESCEND" : "DESCEND_REQUIRES_OWNER_DUAL_ANGLE_RATE_0_1_TO_10_AND_FLOOR_HEADROOM";
+            } else if (sscanf(cmd.text, "DESCEND_PAUSE %u %c", &epoch, &extra) == 1) {
+                ok = descent.pause(session, cmd.owner, epoch);
+                response = "DESCEND_PAUSE";
+            } else if (sscanf(cmd.text, "DESCEND_RESUME %u %c", &epoch, &extra) == 1) {
+                ok = descent.resume(session, cmd.owner, epoch);
+                response = "DESCEND_RESUME";
+            } else if (sscanf(cmd.text, "DESCEND_BOOST %u %lf %c", &epoch, &value, &extra) == 2) {
+                ok = descent.boost(session, cmd.owner, epoch, value);
+                response = "DESCEND_BOOST";
             } else if (!strcmp(cmd.text, "KEEPALIVE")) {
                 ok = cmd.owner == session.owner && session.state == State::Running;
                 if (ok)
@@ -277,6 +258,7 @@ void controlTask(void*) {
                 if (ok) {
                     controller.reset();
                     dualController.reset();
+                    descent.reset();
                     portENTER_CRITICAL(&gateMux);
                     if (gate.epoch == epoch) {
                         gate.stopped = false;
@@ -307,6 +289,7 @@ void controlTask(void*) {
                     bench = false;
                     controller.reset();
                     dualController.reset();
+                    descent.reset();
                     portENTER_CRITICAL(&gateMux);
                     gate.reason = "RUNNING";
                     portEXIT_CRITICAL(&gateMux);
@@ -338,6 +321,7 @@ void controlTask(void*) {
                     bench = false;
                     controller.reset();
                     dualController.reset();
+                    descent.reset();
                     portENTER_CRITICAL(&gateMux);
                     gate.reason = "RUNNING_BOTH";
                     portEXIT_CRITICAL(&gateMux);
@@ -414,6 +398,7 @@ void controlTask(void*) {
                         verified = false;
                         controller.reset();
                         dualController.reset();
+                        descent.reset();
                         output = Output{};
                     }
                     response =
@@ -426,6 +411,7 @@ void controlTask(void*) {
                         verified = false;
                         controller.reset();
                         dualController.reset();
+                        descent.reset();
                         output = Output{};
                     }
                     response =
@@ -437,6 +423,7 @@ void controlTask(void*) {
                     verified = false;
                     controller.reset();
                     dualController.reset();
+                    descent.reset();
                     output = Output{};
                     target = 0;
                     ok = true;
@@ -475,6 +462,7 @@ void controlTask(void*) {
                         cfg = next;
                         controller.reset();
                         dualController.reset();
+                        descent.reset();
                         output = Output{};
                         ok = true;
                         response = "CONFIG_CASCADE";
@@ -494,6 +482,7 @@ void controlTask(void*) {
                         cfg = next;
                         controller.reset();
                         dualController.reset();
+                        descent.reset();
                         ok = true;
                         response = "CONFIG";
                     }
@@ -576,9 +565,19 @@ void controlTask(void*) {
                     session.sampleAt = now;
                     publish(true);
                 } else if (calibrated) {
+                    Config rollConfig = configs[0], pitchConfig = configs[1];
+                    if (descent.active()) {
+                        if (!descent.step(dt)) {
+                            emergency("DESCENT_TIMING");
+                            continue;
+                        }
+                        rollConfig.base = pitchConfig.base = descent.collective();
+                        target = descent.rollTarget();
+                        pitchTarget = descent.pitchTarget();
+                    }
                     if (both) {
-                        auto pair = dualController.step(configs[0],
-                            configs[1],
+                        auto pair = dualController.step(rollConfig,
+                            pitchConfig,
                             mode,
                             target,
                             pitchTarget,
@@ -695,6 +694,14 @@ void controlTask(void*) {
                 status.reason);
             if (xQueueSend(replies, &health, 0) != pdTRUE)
                 droppedReplies++;
+            if (descent.active() && !status.stopped) {
+                Line progress;
+                progress.owner = session.owner;
+                snprintf(progress.text, sizeof(progress.text), "DESCENT,%lu,%s,%.6f,%.6f,%.6f",
+                         (unsigned long)session.epoch, descent.reason(), descent.collective(),
+                         descent.floor(), descent.rate());
+                if (xQueueSend(replies, &progress, 0) != pdTRUE) droppedReplies++;
+            }
         }
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(5));
     }

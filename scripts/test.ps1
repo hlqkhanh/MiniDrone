@@ -18,6 +18,10 @@ if ($LASTEXITCODE) { throw 'S-function wrapper tests failed' }
 if ($LASTEXITCODE) { throw 'TCP sender compile failed' }
 & (Join-Path $output 'tcp_tx_tests.exe')
 if ($LASTEXITCODE) { throw 'TCP sender tests failed' }
+& g++ -std=c++17 -Wall -Wextra -Werror (Join-Path $rebuild 'tests/descent_tests.cpp') -o (Join-Path $output 'descent_tests.exe')
+if ($LASTEXITCODE) { throw 'Descent compile failed' }
+& (Join-Path $output 'descent_tests.exe')
+if ($LASTEXITCODE) { throw 'Descent tests failed' }
 & g++ -std=c++17 -Wall -Wextra -Werror (Join-Path $rebuild 'simulation/native_sim.cpp') -o (Join-Path $output 'native_sim.exe')
 if ($LASTEXITCODE) { throw 'Simulation compile failed' }
 & (Join-Path $output 'native_sim.exe') $output

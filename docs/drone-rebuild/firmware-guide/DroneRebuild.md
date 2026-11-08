@@ -38,12 +38,10 @@ Vị trí một function ở đầu/cuối file không quyết định function 
 | Trường | Ý nghĩa |
 | --- | --- |
 | `stopped`, `enabled` | Đã dừng/được phép xuất output hay chưa |
-| `ramping` | Đang giảm duty theo dừng mềm |
 | `epoch` | Thế hệ điều khiển, thay đổi khi dừng |
 | `deadline` | Hạn kết thúc hữu hạn; 0 biểu diễn không đặt hạn trong đường tương ứng |
 | `hb`, `sample` | Mốc heartbeat và mẫu điều khiển mới nhất |
 | `duty[4]` | Đề xuất duty hiện tại |
-| `rampDuty[4]`, `rampStart`, `rampEnd` | Duty ban đầu và thời gian của dừng mềm |
 | `reason` | Chuỗi lý do, ví dụ STOP hoặc HEARTBEAT |
 
 #### Snapshot là gì?
@@ -231,7 +229,7 @@ Wi-Fi tạo đường kết nối mạng; **TCP server** là nơi app kết nố
 
 Firmware yêu cầu gọi `guard()` mỗi **5000 microsecond = 5 ms**, tương ứng nhịp danh định **200 Hz**. Callback được thực thi trong `ESP_TIMER_TASK`, không phải một ISR do firmware tự viết.
 
-`guard()` kiểm tra điều kiện cho phép xuất motor, các mốc thời gian và dừng mềm, rồi cập nhật PWM. Task điều khiển tính duty đề xuất; `guard()` là nơi đưa duty được phép ra phần cứng. Vì vậy, tạo timer này là chuẩn bị đường xuất motor và cơ chế kiểm tra đi kèm, không phải bắt đầu bay.
+`guard()` kiểm tra điều kiện cho phép xuất motor và các mốc thời gian, rồi cập nhật PWM. Task điều khiển tính duty đề xuất; `guard()` là nơi đưa duty được phép ra phần cứng. Vì vậy, tạo timer này là chuẩn bị đường xuất motor và cơ chế kiểm tra đi kèm, không phải bắt đầu bay.
 
 Chu kỳ 5 ms là yêu cầu lập lịch, không có nghĩa callback luôn chạy chính xác tuyệt đối từng microsecond. Nếu không tạo hoặc không khởi động được timer, code đặt `pwmReady = false` và kết thúc `setup()` trước bước tạo `controlTask`.
 
@@ -354,13 +352,13 @@ Có thể hình dung một request cũ đang xử lý thì STOP tới và đổi
 
 Trong nhánh chạy thông thường, nó kiểm tra deadline, mẫu điều khiển cũ từ 100 ms và heartbeat cũ từ 2 s. Khi vi phạm, nó yêu cầu dừng. Sau đó nó quyết định duty cho từng chân và gọi LEDC.
 
-### STOP và SOFT_STOP
+### STOP và hạ bán tự động
 
-`emergency()` tắt quyền xuất/ramp, tăng epoch, ghi reason. Duty thực được guard ghi theo state đó; không hiểu lời gọi emergency là một phép đo xác nhận motor cơ học đã đứng hẳn.
+`emergency()` tắt quyền xuất, tăng epoch và ghi reason. Guard ghi duty theo state mới; không hiểu emergency là phép đo xác nhận motor cơ học đã đứng hẳn.
 
-`beginSoftStop()` giữ duty tại thời điểm bắt đầu, rồi guard giảm duty gần tuyến tính theo thời gian còn lại. Ví dụ giả định duty ban đầu 120 và ramp 2 s, ở giữa thời gian lệnh còn khoảng 60.
+Ramp SOFT_STOP cũ đã được bỏ. Chức năng mới dùng `StabilizedDescent` để giảm collective trong `controlTask()`, giữ session Running và tiếp tục gọi PID hai trục Angle. Guard không bỏ qua stale-control/heartbeat khi đang hạ. Chạm Base sàn vẫn giữ PID và chờ người vận hành STOP; không tự coi đó là đã đáp.
 
-Trong nhánh ramp, kiểm tra của nhánh Running thông thường không được áp dụng y hệt. Session đã được chuyển khỏi Running và PID đã reset theo đường SOFT_STOP. Đây không phải PID điều khiển độ cao để hạ cánh.
+Xem [cách dùng hạ bán tự động](../STABILIZED_DESCENT.md) và [class quản lý profile](StabilizedDescent.md).
 
 ## 10. Gửi phản hồi và telemetry
 
