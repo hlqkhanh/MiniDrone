@@ -1,0 +1,35 @@
+Tool: built-in image_gen
+Selected output: current architecture, named feedback connectors
+
+Create a NEW technically precise Vietnamese chalkboard control-system diagram. Do not copy any earlier wiring. Landscape black background, white outlined boxes/arrows, green Roll, orange Pitch, cyan angles, blue rates, yellow notes. Large legible type. Title "KIẾN TRÚC DRONEREBUILD HIỆN TẠI". Subtitle "ANGLE Roll + Pitch — PID chạy trên ESP32, khoảng 200 Hz". The design resembles a clear classroom block diagram.
+
+Use NAMED SIGNAL CONNECTORS for feedback to remove wire ambiguity. Feedback is NOT drawn as long loops. Two ports with the same label represent the same signal. NO wire connects the Roll summing circles with the Pitch summing circles.
+
+TOP HALF: Two completely separate horizontal control lanes.
+Green lane: "Roll target (°)" -> summing circle (+ target, − feedback) -> "Outer PID góc Roll / giới hạn rate" -> summing circle (+ target rate, − measured rate) -> "Inner PID rate Roll / giới hạn duty" -> "Roll sign".
+Orange lane BELOW, with ample vertical space: "Pitch target (°)" -> its own summing circle (+ target, − feedback) -> "Outer PID góc Pitch / giới hạn rate" -> its own summing circle (+ target rate, − measured rate) -> "Inner PID rate Pitch / giới hạn duty" -> "Pitch sign".
+Under each of the FOUR summing circles draw ONE short UPWARD feedback arrow terminating at the negative input, originating at a distinct small named connector:
+- Outer Roll connector is cyan "[φ]".
+- Outer Pitch connector is cyan "[θ]".
+- Inner Roll connector is blue "[p]".
+- Inner Pitch connector is blue "[q]".
+These four short arrows must be isolated: absolutely no shared vertical or horizontal wires between them. Do NOT connect the two rows' summing nodes.
+Between Outer and Inner label the forward arrows "Rate target (°/s)".
+
+The two sign outputs go to ONE shared tall block on the right "Mixer Roll + Pitch". A separate "Base duty" input points into this mixer. Mixer -> "Clamp 0–255 / Làm tròn" -> "Gate & PWM / ARM, STOP, watchdog / 20 kHz, 8-bit" -> ONE combined physical block "4 MOTOR + CÁNH QUẠT / DRONE TRÊN GÁ 3 TRỤC". Illustrate a small quadcopter on gimbal inside that final combined block. The motor/plant is one block, so there is no motor-bypass path. The output of Gate drives this combined block.
+
+A small left-side WPF block "App WPF / USB hoặc Wi-Fi / Target, gain, Base, sign / ARM, START, STOP" supplies the two targets/configurations; PID does not run in WPF.
+
+LOWER HALF: A separate clearly framed "ĐO LƯỜNG VÀ ƯỚC LƯỢNG TRÊN ESP32" section. Draw a simple unambiguous LEFT-TO-RIGHT chain with separate aligned columns:
+"IMU SPI / MPU6500 hoặc MPU9250 / Acc + Gyro" -> "Hiệu chuẩn gyro / Đổi trục body" -> "Madgwick / Quaternion" -> "Góc body / Bù mốc ZERO" -> two cyan OUTPUT connector terminals "[φ]" and "[θ]".
+The calibrated gyro block has an additional SIDE OUTPUT branching down to TWO blue OUTPUT connector terminals "[p]" and "[q]"; this branch is before Madgwick. Label them "p: Roll rate (°/s)", "q: Pitch rate (°/s)".
+The final angle terminals are labelled "φ: góc Roll (°)", "θ: góc Pitch (°)".
+The estimator takes acceleration as well as calibrated gyro: show an additional line from the Acc part of the IMU to the Madgwick block marked "Acc". Distinguish this from the body-rate output ports. It is okay to label the calibrated-gyro-to-estimator line "Gyro đã bù bias".
+All four lower terminals are OUTPUT ports; they correspond to the isolated INPUT ports at upper summing junctions. Absolutely NO arrow points from ZERO back into Madgwick. Correct order is Madgwick -> ZERO -> angle ports.
+A white physical feedback arrow from the combined drone/motor plant leads down into the IMU. Route it along the outer border so it does not touch other signal paths.
+
+Add explanatory sentence under lower panel: "Các đầu nối cùng ký hiệu là cùng tín hiệu; φ, θ về Outer PID; p, q về Inner PID."
+Small source footer "RollCore.h • DroneRebuild.ino • Imu.h • Hardware.h".
+Bottom yellow note: "CHƯA CÓ: PID Yaw • Giữ độ cao • Giữ vị trí X/Y • Allocator / desaturation".
+Short note: "Yaw hiện chỉ đo / ước lượng / hiển thị."
+Make it clean with generous empty space. No long return buses. No mixing angles and rates. No implemented yaw, position, or altitude controller. This is actual code architecture, not future design.

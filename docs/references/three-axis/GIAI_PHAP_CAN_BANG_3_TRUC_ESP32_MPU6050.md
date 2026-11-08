@@ -1,5 +1,7 @@
 # Giải pháp cân bằng ba trục với ESP32 và MPU6050
 
+> **Rà soát 07/11/2026:** đọc [đánh giá dẫn chứng và lộ trình kiểm chứng](THREE_AXIS_RIG_EVIDENCE_AND_VALIDATION.md) trước khi triển khai. Các khẳng định “đủ để cân bằng”, không dùng Outer Yaw và chức năng lọc còn thiếu bên dưới cần hiểu theo điều kiện được hiệu chỉnh trong bản rà soát; đây chưa phải giải pháp đã nghiệm thu trên gá của bạn.
+
 Mình đã đối chiếu kiến trúc hiện tại với tài liệu MPU6050, PX4, ArduPilot và nghiên cứu về bộ lọc attitude. Kết luận: chỉ với ESP32 + MPU6050 vẫn có thể giữ ổn định đế xoay ba trục, nhưng firmware hiện tại còn thiếu Yaw Rate PID và bộ mixer/desaturation ba trục.
 
 MPU6050 có accelerometer và gyroscope ba trục nhưng không có magnetometer. Vì vậy:

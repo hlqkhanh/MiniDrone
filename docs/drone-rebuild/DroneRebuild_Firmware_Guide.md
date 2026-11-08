@@ -113,7 +113,7 @@ D_filtered_mới = D_filtered_cũ + alpha × (D_raw - D_filtered_cũ)
 D = Kd × D_filtered
 ```
 
-`D_filtered` tương ứng với biến `derivative_` trong code; `alpha` là hệ số lọc. Ký hiệu `×` nghĩa là phép nhân.
+`D_filtered` tương ứng với variable `derivative_` trong code; `alpha` là hệ số lọc. Ký hiệu `×` nghĩa là phép nhân.
 
 `dHz` điều chỉnh tần số cắt của bộ lọc D. Bộ lọc giúp làm mượt tín hiệu D, vì đạo hàm có thể khuếch đại nhiễu cảm biến.
 
@@ -184,7 +184,7 @@ Trong vòng Rate:
 
 Trong vòng Angle, code cũng dùng `previousInnerLimited_`, `previousMixerLimited_`, `rateLimit` và hướng sai số để quyết định có cập nhật `angleIntegral_` không.
 
-Đây là cơ chế chống windup được triển khai trong code; nó dùng trạng thái giới hạn của chu kỳ trước, nên không nên diễn giải như thể nó dự đoán hoàn hảo mọi tình huống bão hòa.
+Đây là cơ chế chống windup được triển khai trong code; nó dùng state giới hạn của chu kỳ trước, nên không nên diễn giải như thể nó dự đoán hoàn hảo mọi tình huống bão hòa.
 
 ### 2.3 Hai loại giới hạn khác nhau
 
@@ -220,7 +220,7 @@ const double mixed[] = {
 
 ### Roll
 
-| Motor theo chỉ số mảng | Công thức |
+| Motor theo chỉ số array | Công thức |
 |---|---|
 | `motor[0]` | `base + r` |
 | `motor[1]` | `base - r` |
@@ -229,7 +229,7 @@ const double mixed[] = {
 
 ### Pitch
 
-| Motor theo chỉ số mảng | Công thức |
+| Motor theo chỉ số array | Công thức |
 |---|---|
 | `motor[0]` | `base + r` |
 | `motor[1]` | `base + r` |
@@ -279,7 +279,7 @@ Với độ phân giải 8 bit, dải số LEDC thường là 0–255. Tuy nhiê
 
 ### Một luồng dữ liệu quan trọng
 
-Trong `controlTask()`, hàm `publish()` **không ghi PWM trực tiếp**. Nó sao chép các lệnh vào `gate.duty[]` nếu epoch hợp lệ và gate chưa bị dừng:
+Trong `controlTask()`, function `publish()` **không ghi PWM trực tiếp**. Nó copy các lệnh vào `gate.duty[]` nếu epoch hợp lệ và gate chưa bị dừng:
 
 ```cpp
 gate.enabled = enable;
@@ -330,7 +330,7 @@ gate.epoch++;
 gate.reason = why;
 ```
 
-Hàm này khóa gate, tăng epoch và ghi lý do. Khi `guard()` chạy, vì gate bị khóa nên nó ghi 0 cho cả bốn motor.
+Function này khóa gate, tăng epoch và ghi lý do. Khi `guard()` chạy, vì gate bị khóa nên nó ghi 0 cho cả bốn motor.
 
 ### 5.2 `guard()` kiểm tra gì?
 
@@ -358,7 +358,7 @@ Heartbeat mới không thay thế cho mẫu IMU mới. Code còn ghi chú rõ r�
 
 ---
 
-## 6. Trạng thái DISARMED → ARMED → RUNNING → FAULT
+## 6. State DISARMED → ARMED → RUNNING → FAULT
 
 Trong `RollCore.h` có `Session`; trong `.ino` có `Gate`. Hai thứ liên quan nhưng không giống nhau:
 - `Session` theo dõi logic phiên ở `controlTask`.
@@ -384,7 +384,7 @@ Lệnh `START` chỉ được chấp nhận khi các điều kiện trong `.ino`
 - Với Angle mode, `angleKp > 0`.
 - `session.start(...)` thành công.
 
-Code có ghi chú rằng đối số duration cũ vẫn giữ trong giao thức, nhưng START hiện gọi `session.start(..., 0)`, nghĩa là chạy liên tục cho đến khi có điều kiện dừng.
+Code có ghi chú rằng argument duration cũ vẫn giữ trong giao thức, nhưng START hiện gọi `session.start(..., 0)`, nghĩa là chạy liên tục cho đến khi có điều kiện dừng.
 
 Sau khi START thành công, `mode`, `target` được đặt và controller reset.
 
@@ -424,7 +424,7 @@ RollLevel levels[2];
 bool available = imu.begin();
 ```
 
-- `Imu`: lớp đọc mẫu cảm biến.
+- `Imu`: class đọc mẫu cảm biến.
 - `Attitude`: lớp ước lượng tư thế.
 - `RollLevel levels[2]`: lưu mốc cân bằng riêng cho hai trục.
 - `imu.begin()`: khởi tạo IMU; chi tiết bus/SPI và cấu hình cảm biến nằm trong `Imu.h` thật, hiện chưa được cung cấp.
@@ -440,7 +440,7 @@ Theo cách dùng trong `.ino`:
 - `got == 0`: chưa có mẫu mới; tăng `missed`.
 - `got == 1`: có mẫu mới và xử lý tiếp.
 
-Các trường được sử dụng gồm `ax, ay, az, gx, gy, gz`. Code xử lý chúng như gia tốc ba trục và tốc độ góc ba trục, nhưng đơn vị và hệ số chuyển đổi chính xác cần xem `Imu.h`.
+Các field được sử dụng gồm `ax, ay, az, gx, gy, gz`. Code xử lý chúng như gia tốc ba trục và tốc độ góc ba trục, nhưng đơn vị và hệ số chuyển đổi chính xác cần xem `Imu.h`.
 
 ### 7.1 Tính dt
 
@@ -458,7 +458,7 @@ dt = 5000 × 10^(-6) s = 0.005 s = 5 ms
 
 Tức 5 ms, tương ứng 200 mẫu/giây nếu chu kỳ đều.
 
-Nếu `dt > .0075` (7.5 ms), code tăng bộ đếm `late`. `RollCore.h` còn từ chối dt nhỏ hơn 2 ms hoặc lớn hơn 20 ms.
+Nếu `dt > .0075` (7.5 ms), code tăng counter `late`. `RollCore.h` còn từ chối dt nhỏ hơn 2 ms hoặc lớn hơn 20 ms.
 
 ---
 
@@ -571,20 +571,20 @@ vTaskDelayUntil(&wake, pdMS_TO_TICKS(5));
 
 Mục tiêu chu kỳ là 5 ms, tức khoảng 200 Hz. Đây là nhịp task dự kiến, không bảo đảm mỗi lần đọc IMU đều có mẫu mới đúng 5 ms; `got == 0`, `missed` và `late` giúp theo dõi tình trạng này.
 
-Telemetry được phát theo `telem` 50 hoặc 100 Hz. Code tạo dòng `T,...` chứa nhiều trường, trong đó có:
+Telemetry được phát theo `telem` 50 hoặc 100 Hz. Code tạo dòng `T,...` chứa nhiều field, trong đó có:
 - sequence và timestamp;
-- trạng thái và epoch;
+- state và epoch;
 - mode, count;
 - raw accel/gyro;
 - góc và rate đang chọn;
 - target, error, P/I/D, raw, u;
 - duty bốn motor;
-- cờ pid/mixer limited;
+- flag pid/mixer limited;
 - dt, missed, late, số bản tin bị drop;
 - lý do gate, calibrated, verified, props;
 - các hệ số PID và giá trị góc/rate Roll/Pitch/Yaw.
 
-Để phân tích log chính xác, phải dùng đúng thứ tự trường trong chuỗi `snprintf`, không đoán vị trí dựa trên tên.
+Để phân tích log chính xác, phải dùng đúng thứ tự field trong format string của `snprintf`, không đoán vị trí dựa trên tên.
 
 ---
 
@@ -600,7 +600,7 @@ Telemetry được phát theo `telem` 50 hoặc 100 Hz. Code tạo dòng `T,...`
 7. Tạo timer `guard` chạy mỗi 5 ms.
 8. Tạo task `controlTask()`.
 
-Nếu tạo queue, timer hoặc task thất bại, code đánh dấu lỗi/đưa output về trạng thái an toàn.
+Nếu tạo queue, timer hoặc task thất bại, code đánh dấu lỗi/đưa output về state an toàn.
 
 ### `loop()`
 - Phát hiện TCP client ngắt kết nối và gọi emergency.
@@ -628,13 +628,13 @@ Nếu tạo queue, timer hoặc task thất bại, code đánh dấu lỗi/đưa
 | `CALIBRATE` | Reset cửa sổ level và bắt đầu lại quá trình hiệu chuẩn |
 | `ZERO_ROLL` / `ZERO_PITCH` | Lấy mốc cân bằng trục khi điều kiện hợp lệ |
 | `AXIS 0/1` | Chọn Roll/Pitch, reset controller và yêu cầu verify lại |
-| `VERIFY 0/1` | Đặt cờ verified |
-| `PROPS_REMOVED 0/1` | Đặt cờ báo cánh đã tháo/không tháo |
+| `VERIFY 0/1` | Đặt flag verified |
+| `PROPS_REMOVED 0/1` | Đặt flag báo cánh đã tháo/không tháo |
 | `TELEMETRY 50/100` | Chọn tần số telemetry |
 | `CONFIG ...` | Cập nhật một nhóm hệ số Rate PID, angleKp, base, motorSign, outputLimit |
-| `CONFIG_CASCADE ...` | Cập nhật thêm angleKi/angleKd và các tham số cascade |
+| `CONFIG_CASCADE ...` | Cập nhật thêm angleKi/angleKd và các parameter cascade |
 
-Các lệnh config chỉ được xử lý trong trạng thái Disarmed hoặc Fault theo nhánh điều kiện của code.
+Các lệnh config chỉ được xử lý trong state Disarmed hoặc Fault theo nhánh điều kiện của code.
 
 ---
 
@@ -660,9 +660,9 @@ Cách đọc:
 4. P/I/D được cộng thành `raw = -3.3`.
 5. Vì `outputLimit` chưa bị chạm, `u = raw`.
 6. Mixer cộng/trừ `r` với `base` để tạo bốn lệnh.
-7. Gate có thể xuất lệnh hoặc chặn và ghi 0 tùy trạng thái, freshness, deadline và heartbeat.
+7. Gate có thể xuất lệnh hoặc chặn và ghi 0 tùy state, freshness, deadline và heartbeat.
 
-Để biết motor thực sự nhận lệnh gì, phải so sánh duty trong telemetry với `gate.enabled`, `gate.stopped`, trạng thái và `reason`.
+Để biết motor thực sự nhận lệnh gì, phải so sánh duty trong telemetry với `gate.enabled`, `gate.stopped`, state và `reason`.
 
 ---
 
@@ -670,7 +670,7 @@ Cách đọc:
 
 Không chỉnh PID bay thật chỉ dựa vào một ví dụ số. Trước tiên:
 1. Xác minh thứ tự motor, hướng quay, dấu gyro và `motorSign`.
-2. Kiểm tra output ở trạng thái disarmed; xác nhận PWM bằng 0.
+2. Kiểm tra output ở state disarmed; xác nhận PWM bằng 0.
 3. Dùng mô phỏng hoặc test không cánh quạt trước.
 4. Theo dõi target, rate, error, P/I/D, raw, u, duty, `pidLimited`, `mixerLimited`, dt, missed và late.
 5. Chỉnh vòng Rate trước, rồi mới chỉnh vòng Angle.
@@ -696,4 +696,4 @@ Không chỉnh PID bay thật chỉ dựa vào một ví dụ số. Trước ti�
 - định nghĩa `Attitude`, quaternion và thuật toán cập nhật;
 - định nghĩa `RollLevel`, ngưỡng zero và cách tính offset.
 
-Không nên suy ra các chi tiết này chỉ từ tên lớp hoặc lời gọi hàm trong `.ino`.
+Không nên suy ra các chi tiết này chỉ từ tên class hoặc lời gọi function trong `.ino`.
